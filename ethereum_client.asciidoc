@@ -1,0 +1,32 @@
+[[ethereum_clients_chapter]]
+== 第2章 EthereumのClient
+
+クライアントとは、Ethereum Networkと通信するためのソフトウェアです。Bitcoinのクライアントは最初にSatoshi Nakamotoによって作られたBitcoin Coreがリファレンスクライアントとして存在していました。
+
+一方で、Ethereumにそのようなリファレンスクライアントはありません。EthereumはYellow paperという技術仕様をまとめた論文が存在しており、それを参考にしてたくさんの主体がクライアントソフトウェアを開発しています。
+Ethereum Yellow Paperに書いてある技術仕様に準拠している限り、これらのクライアントは相互に互換性があります。
+
+[[main_client_soft]]
+=== 主なClient Software
+
+Ethereum Networkには、 Ethereum, Ethereum Classic, Ella, Expanse, Ubiq, MusicoinなどのYellow Paperの技術仕様に準拠した様々なネットワークが存在します。
+これらはプロトコルレベルでは互換性があるものの、クライアントソフトにはそれぞれのネットワークごとに微妙に異なる実装が必要になるのです。そんなのにいちいち全部対応していられないため、Ethereumのメインクライアントソフトは以下の6つとされています。
+
+* Parity (実装言語：Rust) 
+* Geth(実装言語：Go ) 
+* cpp-ethereum(実装言語：C++) 
+* pyethereum(実装言語：Python) 
+* Mantis(実装言語：Scala) 
+* Harmony(実装言語：Java) 
+
+[[full_node_and_remote_client]]
+=== Full node と Remote client
+
+Ethereumのクライアントは full nodeとremote clientの2種類があります。full nodeはBitcoinのフルノードと同じで、ブロックチェーンの全データを保持し、独立してトランザクション・ブロックの検証作業を行うことができるものです。しかし、フルノードを立てるためには、80–100 GB(2018年9月時点。時間が経つにつれて容量増加)	のデータをローカルストレージに保存しなくてはなりません。
+そのため、スマートフォンやIoTデバイスを始めとしたそのような大容量ローカルストレージを持たないデバイスは、remote clientとして動作することになります。
+
+ここで注意しておくべき点は、Ethereumのremote clientは、Bitcoinのlight clientとは異なるという点です。Bitcoinのlight client は、ブロックチェーンのブロックヘッダデータのみを保持し、Merle proofによって受け取った「トランザクションがそのブロックに含まれているかどうか」の検証は独立してすることができます。しかし、これとは対照的にEthereumのremote clientは、ブロックやトランザクションの検証は行わず、完全に自身が通信しているfull nodeを信頼するようになっています。そのため、セキュリティやプライバシーを保ちたい場合にはfull nodeを動かす方が良いです。
+また、remote clientは、walletとも意味が異なります。walletはトランザクションを処理する機能を持ちますが、remote nodeはその機能に加えて、API (web3.js APIなど)を提供します。
+
+Dapps開発を行う上では必ずしもEthereum メインネットワークのfull nodeを立てなければいけない訳ではありません。開発段階では、PoAアルゴリズムで動いているテストネット、local環境でprivate chainを動かせるGanacheや開発用クライアントをホスティングしてくれるinfulaなどを使用することができます。
+また、MetamaskやEmerald Wallet、MyEtherWallet、MyCryptoなどの remote nodeを使うという選択肢もあります。
