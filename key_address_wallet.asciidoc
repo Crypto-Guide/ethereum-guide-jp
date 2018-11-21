@@ -1,0 +1,51 @@
+[[key_address_wallet_chapter]]
+= 第3章 鍵・address・Wallet
+
+[[key_address_wallet_base]]
+== 鍵・address・walletの基礎
+
+以下のURLで、Bitcoinの鍵・アドレス生成・ウォレットの仕組みについての復習
+
+https://www.etarou.work/posts/4894343[少しだけ易しいMastering Bitcoin【第4章】]
+
+
+[[ethereum_key_address_wallet]]
+== Ethereumにおける鍵・address・wallet
+
+Ethereumの鍵・address・walletについての説明は以下のURL
+
+https://www.etarou.work/posts/5084927[【第3回】Bitcoinを通じて理解するEthereum - 鍵・Address・Wallet]
+
+=== 追記） EthereumにおけるHDウォレットのPath
+
+==== HDウォレットのPathとは
+BitcoinのHDウォレットのパスフレーズの標準規格BIP44は
+-----
+m / purpose' / coin_type' / account' / change / address_index
+-----
+
+
+* m： マスター鍵(小文字だと秘密鍵、大文字だと公開鍵を表す)
+* purpose：目的を表しますが、常に44になっています
+* coin_type： Bitcoinは0, Bitcoin Testnetは1, Litecoinは2になります
+* account：口座番号のようなものです。これによってユーザが複数の口座を使えるようにし、会計や組織的な目的で使えるようにしていま す。それぞれの口座はそれぞれ自身のサブツリーのルートになっています。
+* change：お釣りを受け取るためのBitcoinアドレスかどうかを表します。外部送金者からの受け取りが0, 自身のトランザクションからのおつりの受け取りが1になります。この項目があるのは、大抵の場合、プライバシー保護のために、送金時のお釣りは元のアドレスに戻すのではなく新規にお釣り用アドレスが作成されるためです。
+* address_index：これはその口座の中の受け取りアドレス番号です。
+
+となっていました。
+
+
+EthereumにおけるHDウォレットのパスフレーズは基本的にはこのBIP44に従っているのですが、以下のような違いがあります。
+
+* coin_typeの違い +
+Ethereumは60、Ethereum Classicは61になる
+
+* accountの違い +
+address毎にこの数字が変わる、つまりEthereumでは1つのEOAアカウントに対して1つの数字が割り当てられることになる
+
+* changeの違い +
+ Bitcoinにおいては自分に送金されるトランザクションは、他人から送金されるトランザクションの他に、自身のトランザクションのお釣りトランザクションというのが存在するが、Ethereumには後者は存在しないので受信pathである0のみが使われる
+
+例） +
+M/44&#x27;/60&#x27;/0&#x27;/0/2：
+第一番目のEthereumアカウントの3番目の受信用公開鍵
