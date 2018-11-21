@@ -1,0 +1,26 @@
+[[what_is_ethereum_chapter]]
+= 第1章 Ethereumとは何か
+
+[[warning]]
+== 始めに
+Ethereumを理解するためにはBitcoinの仕組みの知識が必須なので、以下の本を一通り読んでBitcoinについては理解していることを前提に書いていきます。
+
+[[what_is_ethereum]]
+== Ethereumとは何か
+
+[[ethereum_explanation]]
+=== Ethereumの説明
+以下のブログページを参考にEthereumが何なのかを把握
+
+https://www.etarou.work/posts/4953854
+
+[[ethereu_turing_completeness]]
+=== Ethereumにおけるチューリング完全の意味
+「Ethereumはブロックチェーン上でチューリング完全なプログラムが実行できる環境実現したのが革命的」というのは、ブロックチェーン上でチューリング完全にプログラムを実行するのが技術的に難しいかったわけではない。(みんなの PCでチューリング完全言語実行できてるんだからこれは当たり前ですよね)
+「チューリング完全にすると発生する停止問題(そのプログラムが最終的に終了するかどうかは、プログラムコードと入力する値だけでは完全には予測できないという問題)」によって「無限にループするようなプログラムによるP2PネットワークへのDoS攻撃」が起こせてしまうという問題を、Etherという経済的価値のある通貨と等しいGasという概念を持ち込んで解決したことによって「ブロックチェーン上でチューリング完全性」を実現したのが革命的という意味なのである。
+
+=== EthereumにおけるBlock Explorer
+
+Block Explorerとはフルブロックチェーンデータを公開しているサービス
+
+Etherscan : https://etherscan.io/
