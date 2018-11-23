@@ -1,48 +1,168 @@
 [[smart_contract_solidity_chapter]]
 = 第5章 Smart ContractとSolidity
 
+Ethereumには外部アカウント(EOA)とContractアカウントという2つのアカウントが存在するのでした。
+EOAはEthereumネットワークの外部に各オーナーが保持する秘密鍵によって制御されますが、Contractアカウントはそれ自体が持つSmart Contract(事前に書かれたプログラムコード)によって制御されます。
+この章ではそのSmart Contractについて解説していきます。
+
 [[what_is_smart_contract]]
 == Smart Contractとは何か
+Smart Contractは1990年代に暗号学者のNick Szaboが「デジタルな形式で規定された一連の約束」として定義した言葉です。
 
-Computer programs::
-Smart contracts are simply computer programs. The word &#x201c;contract&#x201d; has no legal meaning in this context.
+Smart Contractという言葉には多くの誤解があるため、この本ではSmart Contractを「Ethereumネットワークプロトコルの一部としてのEVM(すなわち非中央集権的なWorld Computer)において決定論的に実行される不変なコンピュータプログラム」と定義します。
+
+言葉の定義を整理しておきます。
+
+不変なコンピュータプログラム::
+Smart Contractのコードは一度deployされると変更することができません。コントラクトを変更するには、新しく作成し直すしかありません。
+
+決定論的に実行される::
+Smart Contractの実行結果は、Smart Contractを実行させたトランザクションのパラメータと実行時のEthereumブロックチェーンの状態にのみ依存し、その他の実行環境によって変化することはありません。
+
+非中央集権的なWorld Computer::
+EVMは全てのEthereumノードでローカルインスタンスとして実行されますが、EVMの全てのインスタンスが同じ初期状態から始まり、同じ入力に対して同じ最終結果を出力するため、Ethereumネットワーク全体が1つのWorld Computerとして動作すると捉えられます。
 
 
 [[smart_contract_lifecycle]]
 == Smart Contractのライフサイクル
 
+Smart Contractのライフサイクルにおける特徴は以下の通りです。
+
+* Smart Contractは基本的にはSolidityやVyperなどの高級言語によってプログラミングされ、実行時にEVM byte codeに変換される。
+* 高級言語によって記述されたSmart Contractは、CompileしてEVM byte codeに変換されたのちに、Contract生成トランザクションによってEthereumネットワークにdeployされる。
+* 生成されたContractアカウントのaddressは、生成者のaddressとNonceによって決定される。
+* EOAは秘密鍵で制御されるが、Contractアカウントはそれ自体が持つSmart Contractコードに制御される。
+* Contractアカウントのaddressに対してトランザクションが実行されることによってのみ、その中にあるSmart Contractコードが実行される。
+* 実行されたContractアカウントがさらに他のContractアカウントを呼び出す・実行することもありますが、一番最初のContractアカウント実行は必ずEOAアカウントから発せられたトランザクションである。
+* EVMはsingle-threaded machineなので、Contractはいかなる場合でも並列実行されない。
+* トランザクションは、それによって実行した全てのContractプログラムがエラーなく実行された場合に、実行に伴うWorld State(全てのEOAやContractアカウントの状態)の変更をする。
+* 一方で、エラーによってプログラム実行が失敗した場合は、トランザクションが実行される前にrollbackする。この時、途中までの実行にかかったGasは実行者の残高から差し引かれる。
+* Contractアカウントが持つプログラムコードは変更できないが、SELFDESTRUCTというEVMオペコードを実行することで、削除することはできる。この場合の削除とは、Contractアカウント内のコードとストレージを削除するということであり、結果として中身が空のContractアカウントを残すことになる。
+アカウントの中身データの削除は、Ethereumノードが保持するデータ量を軽減することになるので推奨されており、実際に削除を行うとnegative gasというGas報酬が貰える。
+ただし、この方法でContractを削除してもそのコントラクトに関係するトランザクションの履歴は削除されない。
+また、Contractのコードの中にSELFDESTRUCTの機能が存在しない場合はContractの削除は不可能である。
+
 [[high_level_languages]]
-== Ethereumの高級言語一覧
+== Ethereumの高級言語
+
+EVMはEVM byte codeと呼ばれる特別な形式のコードを実行する仮想マシンです。EVM byte codeを直接プログラミングすることもできますが、扱いにくいので多くのプログラマーは高級言語でプログラムを記述し、それをコンパイラでEVM byte codeに変換します。
+
+EVMは特有のシステム変数と機能を持っているため、ここで使用する高級言語は汎用的な言語ではなく、 Smart Contract開発に特化した言語が作成されています。
+
+----
+一般的にプログラミング言語は、「宣言型(関数型)」と「命令型(手続き型)」の２つに分類することができます。
+命令型(手続き型)の言語は普段多くの人が慣れ親しんでいるプログラミング言語であり、プログラマがプログラムが動作するロジックとフローの一連の手続きを記述するものです。C++やJavaがこれに当たります。Lisp、JavaScript、Pythonなどの言語はこれらのハイブリット言語を歌っていますが、大抵の場合、命令型(手続き型)として記述されています。
+
+一方で、宣言型(関数型)は、プログラマが詳細な処理ロジックを書くことはせず、大まかな処理フローだけを記述する言語です。HaskellやSQLがこれに当たります。
+命令型(手続き型)と宣言型(関数型)の最も大きな違いは、宣言型(関数型)は関数の外では値(メモリの状態)が変更できないという点です。
+普段多くの人が書いているプログラムでは、例えばpythonであれば
+-----
+i = 0
+limit = 5
+
+while i < limit:
+  print(i)
+  i += 1
+-----
+のように変数に代入するという形でいくらでも値を変更することができると思います。これが命令型(手続き型)の特徴です。
+しかし、宣言型(関数型)言語では、SQLを例にすると
+-----
+DROP, INSERT, UPDATE
+-----
+などの関数によってのみ値の変更が可能ですね。
+----
+
+スマートコントラクトは「一度deployしたら基本的には変更できない」という性質上、バグを極力潰す必要があります。
+どこでも値が変更できる命令型言語よりも、値が変更できる条件が厳しい宣言型言語の方がバグを産みにくいため、スマートコントラクトを記述するための言語は宣言型のプログラミング言語が本当は望ましいです。
+
+しかし、人間は変化を拒み、慣れている物を使いたがる生き物であるため、
+以下に記述した複数のSmart Contractに特化したプログラミング言語のうち、最も使われているのは命令型言語であるSolidityです。笑
+
+LLL::
+関数型（宣言型）プログラミング言語で、文法はLispに似ている。LLLはEthereumのスマートコントラクト用の最初の高水準言語だったが、今日はめったに使用されていない。
+
+Serpent::
+Pythonに似た構文を持つ手続き型（命令的）プログラミング言語。一応、宣言型(関数型)のコードを書くこともできます。
+
+Solidity::
+JavaScript、C ++、Javaに似た構文を持つ手続き型（命令的）プログラミング言語。Ethereumスマートコントラクトで最も一般的で頻繁に使用される言語。
+
+Vyper::
+最も新しい言語で、今も開発が進んでいる。Serpentと似ていてPython likeな構文。
+
+Bamboo::
+Erlangの影響を受けて、明示的な状態遷移を持ち、反復フロー(loop)が存在しない新しい言語。
+
+
 
 [[smart_contract_solidity_chapter]]
 == SolidityでSmart Contractを作成してみる
 
-[[solidity_pragma]]
-=== Solidityのversionを選択
+この章では一番人気のSolidityを使ってSmart Contractを学んでいきます。
+SolidityはEthereum共同開発者であるGavin Woodによって作成された言語です。
 
-[[install_solidity]]
-=== Solidityのinstall
+Solidityで書かれたプログラムコードをEVM byte codeに変換するコンパイラはsolcというものがあります。
+Solidity自体のversionとコンパイラsolcのバージョンはそれぞれ互換性があるものにする必要があるので注意が必要です。
 
-++++
-<pre data-type="programlisting">
-$ <strong>sudo add-apt-repository ppa:ethereum/ethereum</strong>
-$ <strong>sudo apt update</strong>
-$ <strong>sudo apt install solc</strong>
-</pre>
-++++
+[[solidity_pragma_and_install]]
+=== SolidityのversionとInstall
+Solidityのversionは、"Semantic Versioning"というバージョニング手法に則って管理されています。
+"Semantic Versioning"とは、
+
+* APIの変更に互換性のない場合は メジャーバージョン
+* 後方互換性があり機能性を追加した場合は マイナーバージョン
+* 後方互換性を伴うバグ修正をした場合は パッチバージョン
+
+という3つのバージョンの番号を
+----
+MAJOR.MINOR.PATCH
+----
+のように区切って表記する方法です。
+
+しかし、現在solidityでは
+----
+0.MAJOR.MINOR
+----
+という管理の仕方をしており、現在のバージョンは0.4.24で、次回のメジャーアップデートが0.5になっています。
+
+solidityは急速にアップデートされていくので、常に最新のリリースをインストールするのが良いと思います。
+
+ダウンロード・インストール方法はググって下さい。
 
 [[ide_of_solidity]]
 === 開発環境(Remix IDE)
+他のプログラム言語と同様に、Solidityのプログラムコード自体は単なるテキストファイルなので、コンパイラとしてsolcさえあれば、どんなエディタを使ってプログラムを書いても構いません。
 
+プログラムのソースコードが書かれたテキストファイルの拡張子を.solにするだけでSolidityコンパイラによってSolidityプログラムとして認識されます。
 
-[[try_smart_contract]]
-=== 簡単なSmart Contractを書いてみる
+Remix IDEやEthFiddleなどのWebブラウザベースの開発環境もあるのでオススメです。
 
 [[solidity_compiler]]
 === Solidity Compiler (solc)によるコンパイル
+solcによるコンパイルは以下のようなコマンドで行います。
+
+例) +
+Faucet.solというSolidityプログラムを作成したとしてコンパイルを実行
+++++
+<pre data-type="programlisting">
+$ <strong>solc --optimize --bin Faucet.sol</strong>
+======= Faucet.sol:Faucet =======
+Binary:
+6060604052341561000f57600080fd5b60cf8061001d6000396000f300606060405260043610603e5
+763ffffffff7c01000000000000000000000000000000000000000000000000000000006000350416
+632e1a7d4d81146040575b005b3415604a57600080fd5b603e60043567016345785d8a00008111156
+06357600080fd5b73ffffffffffffffffffffffffffffffffffffffff331681156108fc0282604051
+600060405180830381858888f19350505050151560a057600080fd5b505600a165627a7a723058203
+556d79355f2da19e773a9551e95f1ca7457f2b5fbbf4eacf7748ab59d2532130029
+</pre>
+++++
+
+出力されている結果は、Ethereumブロックチェーンにdeployされる16進数直列化バイナリです。
 
 [[eth_contract_abi_sec]]
 == EthereumのコントラクトにおけるABI
+
+
 
 [[solidity_version]]
 === Solidityコンパイラと言語のversion指定
