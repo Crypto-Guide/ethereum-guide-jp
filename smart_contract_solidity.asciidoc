@@ -1,0 +1,101 @@
+[[smart_contract_solidity_chapter]]
+= 第5章 Smart ContractとSolidity
+
+[[what_is_smart_contract]]
+== Smart Contractとは何か
+
+Computer programs::
+Smart contracts are simply computer programs. The word &#x201c;contract&#x201d; has no legal meaning in this context.
+
+
+[[smart_contract_lifecycle]]
+== Smart Contractのライフサイクル
+
+[[high_level_languages]]
+== Ethereumの高級言語一覧
+
+[[smart_contract_solidity_chapter]]
+== SolidityでSmart Contractを作成してみる
+
+[[solidity_pragma]]
+=== Solidityのversionを選択
+
+[[install_solidity]]
+=== Solidityのinstall
+
+++++
+<pre data-type="programlisting">
+$ <strong>sudo add-apt-repository ppa:ethereum/ethereum</strong>
+$ <strong>sudo apt update</strong>
+$ <strong>sudo apt install solc</strong>
+</pre>
+++++
+
+[[ide_of_solidity]]
+=== 開発環境(Remix IDE)
+
+
+[[try_smart_contract]]
+=== 簡単なSmart Contractを書いてみる
+
+[[solidity_compiler]]
+=== Solidity Compiler (solc)によるコンパイル
+
+[[eth_contract_abi_sec]]
+== EthereumのコントラクトにおけるABI
+
+[[solidity_version]]
+=== Solidityコンパイラと言語のversion指定
+
+[[solidity_program]]
+== Solidityでプログラミング
+
+[[data_type]]
+=== データ型
+
+----
+require(withdraw_amount <= 0.1 ether);
+----
+
+[[variable_and_function]]
+=== 定義済みのグローバル変数と関数
+
+[[transaction]]
+==== トランザクション/message call関係
+==== トランザクション関係
+
+[[block]]
+==== ブロック関係
+
+[[address]]
+==== address オブジェクト
+
+[[built_in_function]]
+==== 組み込み関数
+
+[[contract_difinition]]
+=== コントラクトの定義
+
+[[function]]
+=== 関数
+
+[[constructor]]
+=== コントラクトのコンストラクタとselfdestructとその例
+
+[[modifier]]
+=== 関数修飾子
+
+[[inheritance]]
+=== コントラクトの継承
+
+[[error_handling]]
+=== エラーハンドリング(例外処理)
+
+[[event]]
+=== Event
+
+[[call_other_contract]]
+=== 他のコントラクトの呼び出し
+
+[[gas]]
+== コントラクトとGas
