@@ -162,10 +162,74 @@ Binary:
 [[eth_contract_abi_sec]]
 == EthereumのコントラクトにおけるABI
 
+ABIは"Application Binary Interface"の略であり、コンピュータソフトウェアにおいて2つのソフトウェア間でBinary codeを介した通信をする際のインターフェースです。
+これだけではよく分からない人もいると思うので、以下で解説していきます。
 
+[[api_image]]
+.APIの例(LINE Messaging API)
+image::images/api_image.png["API"]
+
+まず、ABIと混同しやすいAPIについて見ていきます。
+API(Application Program[ming] Interface)は、以下の図のようにソフトウェア間で「プログラムコード同士で」やり取りをする場合のインターフェースでした。
+これは通信をする両ソフトウェアが高級言語でのプログラムコードに対応しているために実現できます。
+
+[[abi_os_app]]
+.OSとアプリケーション間におけるABI
+image::images/abi_os_app.png["ABI_OS"]
+
+一方で、ABIは「バイナリコードを介して」やり取りをする場合のインターフェースと考えて下さい。
+身近な例では、OSとアプリケーションのデータのやり取りに使用されています。OSはbinary codeを扱っており、アプリケーションは私たちが記述した高級プログラムコードを扱っているので、その変換をしながらデータのやり取りを可能にしてくれるのがABIというわけです。
+
+[[abi_image]]
+.EthereumにおけるABI
+image::images/abi_image.png["ABI"]
+
+Ethereumにおいて、EVMはEVM byte codeしか処理することができませんでした。EVMは仮想マシンとして、各フルノードで稼働していると考えて下さい。
+(彼らをまとめてThe World Computerと言ったりします)
+
+Ethereumブロックチェーンにdeployされているコントラクトは、このEVMで動いているネットワークにEVM byte codeとして保存されているので、直接関数の内容を読み取ることは難しいですし、高級言語で書かれ、伝搬してきたTransactionをそのままEVMが実行することもできません。
+
+そこでそれらの相互の変換、橋渡しをしてくれるのがABIなのです。
+
+[[abi_app_image]]
+.EthereumにおけるApp例(Wallet)
+image::images/abi_app_image.png["ABI_APP"]
+
+このようにABIはEthereumブロックチェーンと通信するあらゆるプログラム、アプリケーションに不可欠です。
+上図は、Walletアプリケーションの例です。
+
+イメージを掴むためにコマンドの例を挙げておきます。
+開発者は以下のようなコマンドを使用することで、Ethereumブロックチェーン上にあるコントラクトの内容を高級言語で閲覧することができます。
+
+++++
+<pre data-type="programlisting">
+$ <strong>solc --abi Faucet.sol</strong>
+======= Faucet.sol:Faucet =======
+Contract JSON ABI
+[{"constant":false,"inputs":[{"name":"withdraw_amount","type":"uint256"}], \
+"name":"withdraw","outputs":[],"payable":false,"stateMutability":"nonpayable", \
+"type":"function"},{"payable":true,"stateMutability":"payable", \
+"type":"fallback"}]
+</pre>
+++++
 
 [[solidity_version]]
 === Solidityコンパイラと言語のversion指定
+solidity自体のversionとコンパイラであるsolcのversionは揃える必要があると前述していました。
+
+もし仮に「Solidity version 0.4.19で追加された新機能を含んでいるプログラムコード」を0.4.18用のコンパイラでコンパイルしようとすれば、それはエラーになります。
+
+そこでプログラムコードの先頭に
+----
+pragma solidity ^0.4.19;
+----
+というバージョンプラグマを書いておくことで「コンパイラのversionが0.4.19以上じゃないとこのプログラムはコンパイルできません」とコンパイラに教えることができます。
+
+このバージョンプラグマにある^は、0.4.19以上の"マイナーアップデート”でこのプログラムが実行できるということを示します。
+つまり、0.4.20のコンパイラでコンパイル可能ですが、0.5.0のコンパイラではコンパイル不可能だということです。
+
+ちなみに、このバージョンプラグマはプログラム実行時にはEVM byte codeにコンパイルされません。
+
 
 [[solidity_program]]
 == Solidityでプログラミング
