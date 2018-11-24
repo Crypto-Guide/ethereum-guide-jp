@@ -236,32 +236,190 @@ pragma solidity ^0.4.19;
 
 [[data_type]]
 === データ型
+Boolean(bool)::
+真偽値型。TrueかFalse
 
-----
-require(withdraw_amount <= 0.1 ether);
-----
+Integer(int, uint)::
+int8からuint256までの8bit単位で宣言された符号付き整数(int)と符号無し整数(uint)。intやuintだけで接尾辞なしで用いるとEVMのワードサイズに合わせて256bitで使用される
+
+Fixed point (fixed, ufixed)::
+固定小数点型。"ufixedMxN"のように表され、Mの部分がbitサイズ(8〜256)、Nの部分が小数点以下の桁数(最大18まで) +
+例) ufixed256x2
+
+Address::
+20byteのEthereumアドレス。addressオブジェクトには多数のメンバ関数が存在する +
+例) balance(そのアドレスのアカウントのether残高を返す) +
+transfer(etherを指定したアドレスに送る)
+
+Byte array(固定)::
+固定長配列。bytes1からbytes32までで宣言される
+
+Byte array (動的)::
+可変長配列。bytesかstringで宣言される
+
+Enum::
+ユーザー定義の離散値を列挙するデータ型 +
+enum NAME {label1, label2, ...} のように記述する
+
+Arrays::
+固定または動的な配列 +
+例) uint32[][5] :符号無し整数の5つの可変長配列の固定長配列
+
+Struct::
+構造体型 +
+struct NAME {型1 変数1; 型2 変数2; ...}と定義される
+
+Mapping::
+マッピング型。key => valueのペアを定義する +
+mapping(keyの型 => valueの型) NAME と定義される
+
+時間単位(Time units)::
+seconds, minutes, hours, daysは接尾辞として使用可能
+
+Ether units::
+wei, finney, szabo, etherは接尾辞として使用可能
+
 
 [[variable_and_function]]
 === 定義済みのグローバル変数と関数
+[[transaction_and_msg_call]]
+==== トランザクション/message call関係
+msg.sender::
+そのContractを呼び出したmessage call トランザクションを作成したアカウントアドレスを取得する。
+これは必ずしもEOAではなく、Contractアカウントでもあり得る
+
+msg.value::
+そのContractを呼び出したmessage callトランザクションで送られてきたetherの値
+
+msg.gas::
+そのコントラクト呼び出しトランザクションに残っているgasの量。Solidity 0.4.21から廃止され、gasleft関数に置き換わった。
+
+msg.data::
+そのコントラクトを呼び出したmessage callトランザクションのデータpayload
+
+msg.sig::
+データpayloadの最初の4バイト。コントラクトの中でどの関数を実行するかが指定されている。
+
+※EOAアカウントAからContractアカウントBがcallされ、Bの中のプログラムによってContractアカウントBからContractアカウントCがcallされた場合、msgの全ての値がAの値からBの値に更新されますが、delegatecall関数という元々のmsgの値のまま別のContractやライブラリを呼び出す(ここでいうとmsgの値はAのままBからCをコールする)という例外もあります。
 
 [[transaction]]
-==== トランザクション/message call関係
 ==== トランザクション関係
+
+tx.gasprice::
+そのトランザクションのgasprice
+
+tx.origin::
+そのトランザクションを発したEOAアドレス
 
 [[block]]
 ==== ブロック関係
 
+block.blockhash(_blockNumber_)::
+指定したブロック番号のブロックハッシュ(過去256ブロックまで取得可能) +
+Solidity 0.4.22で廃止され、blockhash関数に置き換えられた。
+
+block.coinbase::
+現在のブロックのブロック報酬と手数料の受取人アドレス
+
+block.difficulty::
+現在のブロックのPoW difficulty
+
+block.gaslimit::
+現在のブロックのgaslimit(ブロックに含む全てのトランザクションで使用するgas総額の最大値)
+
+block.number::
+現在のブロックのブロック番号(block height)
+
+block.timestamp::
+現在のブロックのTimestamp
+
 [[address]]
 ==== address オブジェクト
 
+address.balance::
+アドレスのether残高(単位はwei)
+
+address.transfer(_amount_)::
+指定した額のweiをアドレスに送る。エラーが発生した場合に例外処理が可能
+
+address.send(_amount_)::
+指定した額のweiをアドレスに送る。エラーが発生した場合は例外処理をせず、Falseを返す
+
+address.call(_payload_)::
+引数に渡したデータpayloadを使って他のコントラクトを呼び出す。エラー時にはFalseを返す
+
+address.callcode(_payload_)::
+引数に渡したデータpayloadを使って他のコントラクトを呼び出す。
+現在は非推奨のmethodなので使用しない方がいい
+
+address.delegatecall()::
+他のコントラクトを呼び出す。エラー時にはFalseを返す
+
+※address.call、address.callcode、address.delegatecallの違いは以下のサイト参照 +
+https://qiita.com/doskin/items/c4fd8952275c67deb594[delegatecall callcode call の違い]
+
 [[built_in_function]]
 ==== 組み込み関数
+addmod, mulmod::
+モジュロ加算と乗算をする関数 +
+例) addmod(x,y,k) ： (x + y) % k
 
-[[contract_difinition]]
-=== コントラクトの定義
+keccak256, sha256, sha3, ripemd160::
+様々なハッシュ関数
+
+ecrecover::
+署名からメッセージに署名するために使用されたアドレスを導出する関数
+
+this::
+現在実行中のContractアカウントのアドレスを返す
 
 [[function]]
 === 関数
+Solidityにおける関数は、以下のように定義することができます。
+++++
+<pre data-type="programlisting">
+function FunctionName([<em>parameters</em>]) {public|private|internal|external}
+[pure|constant|view|payable] [<em>modifiers</em>] [returns (<em>return types</em>)]
+</pre>
+++++
+
+それぞれの要素について見て行きましょう。
+
+FunctionName::
+関数名 +
+各Contractに1つだけ名前なしのfallback関数を定義することができる。このfallback関数は引数を取ることも返り値を返すこともできない関数で、トランザクションによって関数名が指定されていない時に呼び出されるものである。
+
+parameters::
+引数。データ型と共に名前を定義する。
+
+public::
+定義されたコントラクトとこのコントラクトを継承したコントラクトから呼び出すことができかつ、外部(他のContractやEOAから発せられたトランザクション)から呼び出すことができる。関数はデフォルトでこのpublicになる。
+
+external::
+外部からのみ呼び出すことができる。
+thisを使うと内部から外部的に関数を呼び出すことが可能になる。
+外部から関数を呼び出す場合は、引数で渡された値を一度メモリに保存するのでメモリを消費するが、externalでの呼び出しはメモリを消費せず、gasがpublicよりも安くなる。
+
+internal::
+定義されたコントラクトとこのコントラクトを継承したコントラクからのみ呼び出すことができる。変数はデフォルトでinternalになる。
+
+private::
+定義されたコントラクト内でのみ使用することができる。定義されたコントラクトを継承した子のコントラクトではprivateな関数と値を使用することはできない。
+
+※public, external, internal, privateの違いは以下のサイト参照
+https://tomokazu-kozuma.com/differences-between-public-private-external-and-internal-in-solidity/[public, privateとexternal, internalの違いと使い所]
+
+constant と view::
+viewを付与することで、その関数はいかなるアカウントの状態も変更しないことを明記できる(いわゆる読み取り専用関数) +
+constantもviewと同じ意味であり、Solidity 0.5では、viewではなくconstantを使用することが強制される。
+
+pure::
+pureを付与した関数は、メモリ上の変数を読みも書きもしない関数になる。つまり、引数以外のいかなるデータも参照せずに、値を返す関数になる。
+これによって宣言型プログラミングに近いコーディングができる。
+
+payable::
+payableを付与した関数はEtherの支払いを受け取ることができる関数になる。payableがない関数は、Etherの入金を拒否する。
+coinbase報酬(ブロック生成報酬)の支払いとSELFDESTRUCT継承は、例外としてfallback関数にpayableが付与されていなくても支払いを受け取る。
 
 [[constructor]]
 === コントラクトのコンストラクタとselfdestructとその例
