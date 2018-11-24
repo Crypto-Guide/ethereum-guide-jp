@@ -422,22 +422,330 @@ payableを付与した関数はEtherの支払いを受け取ることができ�
 coinbase報酬(ブロック生成報酬)の支払いとSELFDESTRUCT継承は、例外としてfallback関数にpayableが付与されていなくても支払いを受け取る。
 
 [[constructor]]
-=== コントラクトのコンストラクタとselfdestructとその例
+=== Contractのコンストラクタとselfdestructとその例
+ContractのライフサイクルはContract作成トランザクションに伴うコンストラクタによって始まり、SELFDESTRUCTによって終了します。
+
+まず、コンストラクタはContractが作成された時に一度だけ実行される関数です。
+Solidity 0.4.21までは、以下のようにContractと同じ名前の関数がコンストラクタになるというルールでした。
+
+[source,solidity]
+----
+contract MEContract {
+	function MEContract() {
+		// これがコンストラクタになります
+	}
+}
+----
+
+しかし、この形式ではContract名が変更されて、コンストラクタ名が変更されなかった場合、この関数がコンストラクタではなくなってしまいます。
+また両者の名前を揃えるつもりでもタイプミスをする可能性もあります。このようにミスやバグを引き起こす可能性が高いという理由でSolidity 0.4.22からは以下のようにコンストラクタを定義するようになりました。
+
+[source,solidity]
+----
+pragma ^0.4.22
+contract MEContract {
+	constructor () {
+		// これがコンストラクタになります
+	}
+}
+----
+こうすることで仮にContractの名前が変更されても、コンストラクタに影響はないですし、こちらの方がどの関数がコンストラクタなのかを見分けやすいですよね。
+
+一方で、selfdestructは、SELFDESTRUCTという特殊なEVMオペコードによってContractの内容が破棄されるというものです。(昔はSUICIDEというオペコードでしたが印象が悪いので変更されました)
+Solidityでは、以下のように中身を削除するContractアカウントに残っているether残高を受け取るアカウントのaddressを引数にとってSELFDESTRUCTオペコードを実行する組み込み関数が用意されています。
+
+
+[source,solidity]
+----
+selfdestruct(address recipient);
+----
+
+ただし、このSELFDESTRUCTはContract自体にデフォルトでは存在しないので、Contractの内容を削除するにはこのコマンドを追加する必要があります。
+Contractの利用者はこのSELFDESTRUCTコマンドが存在するかどうかでContractが永久に残るものなのかをチェックすることができます。
+
+コンストラクトとselfdestructの具体例を以下に見て行きます。
+
+
+[source,solidity]
+----
+// Version of Solidity compiler this program was written for
+pragma solidity ^0.4.22;
+
+// Our first contract is a faucet!
+contract Faucet {
+
+	address owner;
+
+	// Initialize Faucet contract: set owner
+	constructor() {
+		owner = msg.sender;
+	}
+
+[...]
+----
+
+コンストラクタはこのように定義され、msg.senderを変数に格納しておくことで、このコントラクトの作成者(オーナー)のアドレスを保持することが多いです。
+
+[source,solidity]
+----
+// Contract destructor
+function destroy() public {
+	require(msg.sender == owner);
+	selfdestruct(owner);
+}
+----
+
+selfdestructはこのように定義され、コントラクトの作成者のみがselfdestructという組み込み関数を実行できるようにするのが一般的です。
 
 [[modifier]]
 === 関数修飾子
 
+Solidityには関数修飾子(modifier)という特別なタイプの関数があり、modifierを関数の定義に加えることによって、その関数に修飾子を追加します。
+modifierは以下のように定義します。
+
+[source,solidity]
+----
+modifier onlyOwner {
+    require(msg.sender == owner);
+    _;
+}
+----
+modifierにある _; は、この場所に修飾子を付与した関数の中身の処理を入れ込むという意味です。
+
+modifierは以下のように関数に付与します。
+
+[source,solidity]
+----
+function destroy() public onlyOwner {
+    selfdestruct(owner);
+}
+----
+
+modifierの中からはmodifierが付与されている関数の中の変数は使用できますが、modifierが付与されている関数の中からmodifier内部の変数にはアクセスできません。
+
+
 [[inheritance]]
 === コントラクトの継承
+Solidityのコントラクトは継承することができます。
+以下に具体的な継承の書き方を見て行きます。
+
+継承する時には、以下のようにContractの定義時に親コントラクトを is Contract名で書きます。
+[source,solidity]
+----
+contract Child is Parent {
+  ...
+}
+----
+
+以下のように、カンマ区切りで複数のContractを継承することもできます。
+
+[source,solidity]
+----
+contract Child is Parent1, Parent2 {
+  ...
+}
+----
+
+ほとんどのContractが必要とするであろうconstructorとmodifier(onlyOwner)、selfdestructを具体例に見ていくと、以下のように継承を使います。
+
+[source,solidity]
+----
+contract owned {
+	address owner;
+
+	// Contract constructor: set owner
+	constructor() {
+		owner = msg.sender;
+	}
+
+	// Access control modifier
+	modifier onlyOwner {
+	    require(msg.sender == owner);
+	    _;
+	}
+}
+----
+
+[source,solidity]
+----
+contract mortal is owned {
+	// Contract destructor
+	function destroy() public onlyOwner {
+		selfdestruct(owner);
+	}
+}
+----
+
+[source,solidity]
+----
+contract Faucet is mortal {
+    // Give out ether to anyone who asks
+    function withdraw(uint withdraw_amount) public {
+        // Limit withdrawal amount
+        require(withdraw_amount <= 0.1 ether);
+        // Send the amount to the address that requested it
+        msg.sender.transfer(withdraw_amount);
+    }
+    // Accept any incoming amount
+    function () public payable {}
+}
+----
+
 
 [[error_handling]]
 === エラーハンドリング(例外処理)
 
+Solidityでは、エラー処理にはassert, require, revert, throwの4つを使用します。throwは将来的にはなくなる予定の非推奨関数です。
+
+assertとrequireは、「指定した条件がFalseの場合はエラーを伴って実行を停止する」という関数です。
+一般的に、assertは条件がTrueであると予想される時に使用します。
+
+onlyOwner modifierで使用したように、何らかの入力をチェックする場合には基本的にはFalseであることが期待されるので、以下のようにrequireを使用していました。
+
+[source,solidity]
+----
+require(msg.sender == owner);
+----
+
+以下のようにエラーになった時に表示するメッセージを付与することもできます。しかし、エラーメッセージを表示すると少しGasが高くなるので、エラーメッセージを出すコストも考える必要があります。
+[source,solidity]
+----
+require(msg.sender == owner, "Only the contract owner can call this function");
+----
+
+revert関数とthrow関数は、Contractの実行をそこで停止し、状態の変更を元に戻します。
+
 [[event]]
 === Event
 
+以降の章で説明して行きますが、トランザクションが成功または失敗して終了すると、トランザクションの実行ログが記録されている"Receipt"が生成されます。
+EventはこのReceiptに刻まれるログを生成するために使用されるオブジェクトです。
+
+Eventの例を以下に見て行きます。
+
+
+以下のようにbyte32(固定長配列型)のstoreDataに値を入れ込むSetに関するeventをContractに作成します。この時、eventの結果としてログ出力したい変数の型と名前を指定しておきます。
+
+そして実行ログを残したいset関数の中で、「emit イベント名(ログとして出力したい変数)」と定義することで、この関数が実行された時に、Eventが発火するようになります。
+
+[source,solidity]
+----
+contract SimpleStorage {
+    bytes32 storedData;
+    //イベント設置
+    event Set(address from,bytes32 stored);
+
+    function set(bytes32 x) {
+        storedData = x;
+
+        //イベント発火
+        Set(msg.sender,x);
+    }
+    function get() constant returns (bytes32 retVal) {
+        return storedData;
+    }
+}
+----
+
+このようにEventを付与したset関数が実行された時、以下のようにFront end側のweb3.jsライブラリでこの関数に設定されたeventが実行過程で発火するかどうかを監視し、その結果を出力することができます。
+
+[source,solidity]
+----
+var Web3 = require('web3');
+var web3 = new Web3();
+
+web3.setProvider(new web3.providers.HttpProvider("http://localhost:8545");
+
+//simplestorageのABI
+var ABI = require('./simplestorage.json');
+
+//デプロイしたアドレス
+var address = '0xf9f0ce2e38fbe115d2500606ebd7750f8876c8cc
+';
+
+var simpleStorage = web3.eth.contract(ABI).at(address);
+var event = simpleStorage.Set();
+//イベント監視
+event.watch(function (error, result) {
+ console.log('watching "Set" event!');
+  if (!error)
+    console.log(result);
+});
+----
+
+Eventが発火した結果として以下のようなresultが得られます。
+----
+{ from: '0x2a595f16eee4cb0c17d9a2d939b3c10f6c677243', stored: "hello eth!" }
+----
+
 [[call_other_contract]]
 === 他のコントラクトの呼び出し
+Contractから他のContractを呼び出すのは、とても有用ですが、大きなリスクがあることも覚えておきましょう。Contractの中ではしばしば他人のContractを呼び出すため、その中身が理解できていないと危険であり、そのContractがどのような関数を含んでいるかを完全に把握する必要があります。
+
+最も安全な方法は呼び出す他のContractを自分で作成している場合です。
+以下の例では、自身で作ったFaucetコントラクトをTokenというコントラクトで呼び出しています。
+[source,solidity]
+----
+import "Faucet.sol";
+
+contract Token is mortal {
+	Faucet _faucet;
+
+	constructor() {
+		_faucet = (new Faucet).value(0.5 ether)();
+	}
+
+	function destroy() ownerOnly {
+		_faucet.destroy();
+	}
+}
+----
+
+このように自身の作成したContractファイルをimport文で読み込み、Faucet _faucetという形で呼び出す側の関数の中で定義します。
+newを使用することでインスタンスを作成できます。またvalueというメソッドでetherの転送を指定しています。
+またFaucetコントラクト内の関数を呼び出すこともでき、destroy関数の中でFaucetコントラクトのdestroy関数を呼んでいます。
+
+
+一方で、既存のインスタンスのaddressを指定して他のContractを呼び出すという方法があります。
+以下のように行われます。
+
+[source,solidity]
+----
+import "Faucet.sol";
+
+contract Token is mortal {
+
+	Faucet _faucet;
+
+	constructor(address _f) {
+		_faucet = Faucet(_f);
+		_faucet.withdraw(0.1 ether)
+	}
+}
+----
+
+呼び出す側のContractで呼び出すコントラクトのアドレスを引数_fとして受け取ります。それをFaucetオブジェクトに変換して、そのFaucetオブジェクトからFaucetコントラクトの中のwithdraw関数を呼んでいます。
+
+この方法は、引数として受け取ったaddressが本当にFaucetオブジェクトであるかわからないため、非常にリスクが高いです。
+
+また、callメソッドやdelegatecallを使用した他のContractの呼び出しもあります。
+
+[source,solidity]
+----
+contract Token is mortal {
+	constructor(address _faucet) {
+		if !(_faucet.call("withdraw", 0.1 ether)) {
+			revert("Withdrawal from faucet failed");
+		}
+	}
+}
+----
+のように引数に受け取ったaddressから直接的にcall関数を呼び出すというさらにリスクが高いものになっています。
+call関数は、エラーが発生したらfalseを返すので、エラー処理の戻り値を評価することもできます。
+
+delegatecallメソッドは、msg.senderを呼び出し元のContractでの状態(呼び出し元のContractを呼び出したアカウントのaddress)から変化させずに、別のContractを呼び出す関数です。
+delegatecallで注意しなければいけない点として、あるContractから他のContractの呼び出しには、通常のcallがデフォルトでは使われますが、あるContractからライブラリの呼び出しにはデフォルトでdelegatecallが使われるという点は覚えておきましょう。
+
 
 [[gas]]
 == コントラクトとGas
