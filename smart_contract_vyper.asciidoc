@@ -1,0 +1,372 @@
+[[smart_contract_vyper_chapter]]
+= 第6章 Smart ContractとVyper
+
+Vyperは、開発者が理解しやすいコードを簡単に作成できるようにすることにより、優れた監査機能を提供することを目指している、Python likeな、EVM用のContract指向プログラミング言語です。
+
+Vyperが掲げている原則3原則は、
+
+Security::
+Vyperでは、安全なスマートコントラクトを自然に開発できなければならない。
+Language and compiler simplicity::
+言語とコンパイラの実装はシンプルであろうとしなければならない。
+Auditablity::
+Vyperのコードは最大限human-readableでなければならないし、ミスリーディングなコードが書かれにくいようにしなければならない。
+
+です。
+
+開発途中の言語ではありますが、Smart Contractにおけるセキュリティの重要性を考えると、これから多く使用されていく言語と言えるでしょう。
+
+[[vulnerabilities]]
+== Smart Contractの脆弱性
+Smart Contractに見つかっている基本的な脆弱性として以下の3つがあります。
+
+Suicidal Contrats::
+任意のアドレスによってselfdestructされてしまうContract
+
+Greedy Contracts::
+etherを外部に送信できない状態になってしまうContract
+
+Prodigal Contracts::
+etherを任意のアドレスに送信することが可能なContract
+
+これらの脆弱性は意図的に実装されたものではないとしても、Ethereumのユーザーに大きな損害を与えるリスクがあるため、Vyperではこれらの脆弱性が生まれにくい安全なコードを書きやすいような設計になっています。
+
+[[compare_with_solidity]]
+== Solidityとの比較
+Vyperは、Solidityにはあるいくつかの機能を意図的に省略することによって安全なコードが書きやすい設計になっています。
+
+以下に、Solidityにはあるが「Vyperにはない機能とその理由」を説明していきます。
+
+[[modifier]]
+=== 修飾子
+
+Solidityではメソッドを実行する前に修飾子(modifier)を先に実行することができ、これによって複数メソッドで行われる処理を共通化したり、メソッドの実行権限を確認するバリデーションなどに利用することができました。
+
+[source, javascript]
+----
+enum Stages {
+    SafeStage
+    DangerStage,
+    FinalStage
+}
+
+uint public creationTime = now;
+Stages public stage = Stages.SafeStage;
+
+function nextStage() internal {
+    stage = Stages(uint(stage) + 1);
+}
+
+modifier stageTimeConfirmation() {
+    if (stage == Stages.SafeStage &&
+                now >= creationTime + 10 days)
+        nextStage();
+    _;
+}
+
+function a()
+    public
+    stageTimeConfirmation
+{
+}
+----
+
+しかし、多くの場合、modifierは使い回されているので、関数を新たに記述する開発者は盲目的にmodifierを関数に付与してしまいがちです。
+
+例えば、上のコードの例であれば、function a()をある開発者が追加する時、modifierのstageTimeConfirmationという名前だけを見て盲目的に関数に付与しています。
+
+しかし、stageTimeConfirmationは良く見てみると内部でnextStage()という別の関数を呼び出していますね。
+
+このようにmodifierは盲目的に利用されやすいにも関わらず、modifierの処理の中で別の関数を呼ぶなどの様々な処理が可能になっているため、脆弱性の原因になりやすいのです。
+
+以上のような理由で、Vyperには修飾子(modifier)がありません。もし共通化出来るような処理があったとしてもメソッドにして切り出すか、各メソッドに記述する必要があります。
+
+例えば、solidityでは頻繁にmodifierとして使用されるonlyOwner修飾子は、
+----
+assert msg.sender == self.owner
+----
+と関数の中の処理に直接書かれます。
+
+
+※ちなみにVyperではエラーハンドリング(Solidityはrequire, assert, revertの3つある)はassertしかありません。(Solidityでのrequireと同じ機能) +
+またselfは「そのContract自身」を指しています。
+
+
+[[contract_definition_and_class_inheritance]]
+=== コントラクトの定義とクラス継承
+Solidityでは、
+----
+contract コントラクト名 {
+  コントラクト内容
+}
+----
+のようにContractを定義していましたが、Vyperはこのようなコントラクトに名前をつけて定義することはせず、「1プログラムファイル1コントラクト」になっています。
+
+また、Vyperはコントラクトの継承ができません。(そのため、そもそもコントラクト自体に名前をつける必要がないので、名前をつけない)
+コントラクトの継承はオブジェクト指向プログラミングでは必須とされていますが、コントラクトが複雑に継承されるとSmart Contractのセキュリティホールが出来やすくなりますし、監査も大変ということから継承が無い設計になっています。
+
+
+またこの関係でSolidityとVyperではメソッドのスコープの種類が異なってくることも覚えておきましょう。
+
+Solidity::
+public (外部呼び出し○, 子クラス呼び出し○)
+private (外部呼び出し×, 子クラス呼び出し×)
+internal (外部呼び出し×, 子クラス呼び出し○)
+external (外部呼び出し○, 子クラス呼び出し×)
+
+Viper::
+public (外部呼び出し○)
+private (外部呼び出し×)
+
+となっており、Vyperはそもそも継承がないので、外部から呼び出しできるか否かのみを指定出来れば問題ないためスコープが2種類となっています。
+
+[[inline_assembly]]
+=== インラインアセンブリ
+Solidityでは、インラインアセンブリによって、EVMオペコードを以下のように直接記述することができます。
+
+----
+3 0x80 mload add 0x80 mstore
+----
+----
+assembly {
+    r := mload(add(_sig, 32))
+    s := mload(add(_sig, 64))
+    v := byte(0, mload(add(_sig, 96)))
+}
+----
+
+しかし、Vyperではインラインアセンブリは可読性を下げるため、サポートされていません。
+
+[[function_overloading]]
+=== 関数のオーバーロード
+Solidityでは以下のように同じ関数名の関数を定義する(関数のオーバーロード：多重定義)ことが可能でした。
+
+[source,javascript]
+----
+function f(uint _in) public pure returns (uint out) {
+    out = 1;
+}
+
+function f(uint _in, bytes32 _key) public pure returns (uint out) {
+    out = 2;
+}
+----
+
+しかし、Vyperでは関数のオーバーロードは可読性を下げるためサポートされていません。
+
+
+[[infinite_loop]]
+=== 無限ループになりうる処理
+Solidityでは無限ループを書くことができます。(実際にはgaslimitの関係で、無限ループを書くメリットはないですが、書くことはできます)
+しかし、Viperは無限ループを書くこと自体ができません。
+
+while 文が存在しない::
+Solidityでは、 while (条件){.....} という形で繰り返し処理を記述できましたが、Vyperにはwhile文がありません。
+
+for 文の反復回数の指定が決定的である必要がある::
+Vyperにはfor文はありますが、ループ回数の指定は上限が決まっていなければいけません。また、以下のようにfor文で使用するrange()には整数しか渡せません。
+
+----
+for i in range(100):
+  処理内容
+----
+
+再帰呼び出しができない:::
+関数の中で自身を呼び出す処理をすることでループをさせる再帰呼び出しもSolidityは書くことができますが、Viperでは書けません。
+
+[[variable_typecasting]]
+=== 変数の型キャスト
+
+変数型のキャスト変換は、暗黙に行われるものと明示的に行われるものの2種類が存在します。
+
+通常、暗黙的なキャスト変換はコンパイル時などに行われ、元の変数のデータが失われない範囲内で変数の型を変更するものです。
+
+一方で、明示的なキャスト変換は強制的に変数の型を変換するので、以下のsolidityでの例のように中のデータが変わってしまうこともあるため、想定外の動作に繋がります。
+
+[source,javascript]
+----
+uint32 a = 0x12345678;
+uint16 b = uint16(a);
+// 変数 b の値は 0x5678 になる
+----
+
+一方、Vyperでは convert関数という明示的にキャスト変換をするけれども、変数の中身のデータが変わってしまう場合には例外が発生する関数が用意されており、これを使用します。
+
+convert変数の実装は以下です。
+
+[source,python]
+----
+def convert(expr, context):
+    output_type = expr.args[1].s
+    if output_type in conversion_table:
+        return conversion_table[output_type](expr, context)
+    else:
+        raise Exception("Conversion to {} is invalid.".format(output_type))
+----
+
+convert関数のoutput_typeに入れる値によって何にキャスト変換するのかが決定します。
+例えば、output_typeにint128を入れると以下の関数が呼び出されるようになっています。
+
+[source,python]
+----
+@signature(('int128', 'uint256', 'bytes32', 'bytes'), 'str_literal')
+def to_int128(expr, args, kwargs, context):
+    in_node = args[0]
+    typ, len = get_type(in_node)
+    if typ in ('int128', 'uint256', 'bytes32'):
+        if in_node.typ.is_literal
+            and not SizeLimits.MINNUM <= in_node.value <= SizeLimits.MAXNUM:
+            raise InvalidLiteralException(
+                "Number out of range: {}".format(in_node.value), expr
+            )
+        return LLLnode.from_list(
+            ['clamp', ['mload', MemoryPositions.MINNUM], in_node,
+            ['mload', MemoryPositions.MAXNUM]], typ=BaseType('int128'),
+            pos=getpos(expr)
+        )
+    else:
+        return byte_array_to_num(in_node, expr, 'int128')
+----
+
+明示的なキャスト変換は、暗黙的なものに比べてコードを冗長化しますが、Smart Contractの安全性と監査のしやすさを向上させます。
+
+[[preconditions_and_postconditions]]
+=== 前提条件と事後条件
+Vyperは事前条件、事後条件、状態遷移を明示的に処理します。
+これによってコードは冗長化しますが、最大限の可読性と安全性を実現します。
+
+開発者はVyperのコードを以下の3つを考慮して記述するべきです。
+
+Condition::
+Ethereum状態変数の現在の状態と条件はどうなっているかを把握する
+
+Effects::
+そのContractコードが実行された時、状態変数の状態にどのような影響を与えるか、また影響を受けないものは何かを確認する
+
+Interaction::
+上記の2つをしっかりと考慮した上で、コードを読んで実行のシナリオを予想する
+
+これらの3つのポイントが全て考慮され、コード上で表されていれば、コードの可読性が上がり、監査がしやすくなるでしょう。
+
+[[decorators]]
+== デコレータ
+
+Solidityで関数名の後に記述されていた関数にまつわるpublic, privateなどの修飾子は、Vyperでは以下のようにデコレータとして関数の前に記述されます。
+
+----
+@public
+@constant
+def totalSupply() -> num256:
+    return as_num256(self.totalSupply)
+----
+
+デコレータには以下のものがあります。
+
+@private::
+メソッドのスコープ設定。この関数を外部呼び出すことはできないという設定
+
+@public::
+メソッドのスコープ設定。この関数を外部呼び出すことができるという設定
+
+@constant::
+このデコレータが付与された関数は状態変数を変更できない。
+
+@payable::
+このデコレータを持つ関数だけがetherの送信を受け入れることができる
+
+もちろん、@constantと@payableの両方を付与された関数はコンパイルが失敗しますし、全ての関数は@publicもしくは@privateを付与されている必要があります。
+
+[[function_and_variable_ordering]]
+== 関数と変数の順序
+Vyperでは、1つのファイルが1つのコントラクトになっているため、コードの上から イベントの定義 -> 変数の型定義 -> メソッドの記述という順番を守らないとコンパイル時にエラーになります。
+つまり、後ろで定義されている関数を呼び出すことはできません。
+
+Solidityはこの順番を守らない、以下のようなコードでもコンパイルが可能です。
+
+[source,javascript]
+----
+pragma solidity ^0.4.0;
+
+contract ordering {
+
+    function topFunction()
+    external
+    returns (bool) {
+        initiatizedBelowTopFunction = this.lowerFunction();
+        return initiatizedBelowTopFunction;
+    }
+
+    bool initiatizedBelowTopFunction;
+    bool lowerFunctionVar;
+
+    function lowerFunction()
+    external
+    returns (bool) {
+        lowerFunctionVar = true;
+        return lowerFunctionVar;
+    }
+
+}
+----
+
+Vyperのコードは以下のように先ほどの順序を守って書かれます。
+
+[source,python]
+----
+# Declare a variable called theBool
+theBool: public(bool)
+
+# Declare a function called topFunction
+@public
+def topFunction() -> bool:
+    # Assign a value to the already declared function called theBool
+    self.theBool = True
+    return self.theBool
+
+# Declare a function called lowerFunction
+@public
+def lowerFunction():
+    # Call the already declared function called topFunction
+    assert self.topFunction()
+----
+
+
+[[compilation]]
+== コンパイル
+Vyperには独自のオンラインコードエディタとコンパイラが用意されているため、Webブラウザのみを使用してスマートコントラクトを記述し、バイトコード、ABI、およびLLLにコンパイルできます。 +
+https://vyper.online/[Vyper Online Compiler]
+
+また、コマンドラインを使用してContractをコンパイルすることもできます。各Vyper Contractは、拡張子が.vyの 1つのファイルに保存されるため、
+Vyperをインストールすると、次のコマンドを実行してVyper Contractをコンパイルできます。
+
+----
+vyper ~/hello_world.vy
+----
+
+以下のコマンドを実行することで人間にも読めるJSON形式のABIを取得できます。
+
+----
+vyper -f json ~/hello_world.v.py
+----
+
+
+[[protecting_against_overflow]]
+== コンパイラレベルでのオーバーフローエラーに対する保護
+
+Solidityでは整数オーバーフローを防ぐために、SafeMathや Mythril OSSなどのスマートコントラクトセキュリティ分析ツールなどのライブラリを使用します。
+
+一方で、Vyperでは通常の演算子がオーバーフローを起こさないように作られており、SafeMathライブラリは不要です。
+max関数、バイト列のslice関数、RLPデコードの関数はビルトインとして定義されています。(あらかじめいくつかの関数が組み込まれているということ)
+
+
+[[reading_and_writing_data]]
+== データの読み書き
+
+スマートコントラクトがデータを書き込む場所は以下の2つです。
+
+Global State::
+スマートコントラクトの状態変数は、Global State, World Stateと呼ばれる全てのアカウントの状態に、コントラクトのアドレスに紐づいて、データとして保存されます。
+スマートコントラクトは、このGlobal Stateの全アカウントの状態を読み取り・変更することしかできず、他のコントラクトの中身(プログラムコード)を変更することはできません。
+
+Logs::
+スマートコントラクトはその実行ログをEventを通じてレシートとしてEthereumブロックチェーンに書き込むことができます。
