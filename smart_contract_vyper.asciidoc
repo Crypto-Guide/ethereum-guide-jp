@@ -158,7 +158,7 @@ function f(uint _in, bytes32 _key) public pure returns (uint out) {
 [[infinite_loop]]
 === 無限ループになりうる処理
 Solidityでは無限ループを書くことができます。(実際にはgaslimitの関係で、無限ループを書くメリットはないですが、書くことはできます)
-Viperはこれも書くことができません。
+しかし、Viperは無限ループを書くこと自体ができません。
 
 while 文が存在しない::
 Solidityでは、 while (条件){.....} という形で繰り返し処理を記述できましたが、Vyperにはwhile文がありません。
