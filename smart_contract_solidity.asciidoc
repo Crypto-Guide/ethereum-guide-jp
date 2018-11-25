@@ -749,3 +749,83 @@ delegatecallで注意しなければいけない点として、あるContractか
 
 [[gas]]
 == コントラクトとGas
+Gasはスマートコントラクトプログラミングでは非常に重要な概念です。
+GasはEVMにトランザクションの処理を実行させるための燃料であり、これがあることによってトランザクションが実行できる最大の計算量を制限しています。
+
+トランザクションの実行処理の途中で、Gasが切れると以下の一連の現象が起きます。
+
+* "ガス切れ"の例外が発生する
+* Contractの状態がトランザクション実行前に戻される
+* 途中までのトランザクション実行に使用されたGasは、返還されない
+
+このGasはトランザクションを実行するuserによって支払われることになるというのが重要です。
+もちろんuserは、etherを支払いたくはないので、実行するために必要なGasが高いContractは実行したがりませんね。
+そのため、開発者はそのContractを呼び出すのに必要なGasを最小限に抑えることを常に考える必要があります。
+
+Gasを最小限に抑えるために以下のような手法があります。
+
+動的にサイズが変化する配列の使用を避ける::
+配列の各要素に対して処理を実行したり、特定の要素を検索するようなループの処理は頻繁に使用されますが、その時に配列のサイズが固定されていないと多くの計算処理が行われてしまう可能性があり、Gasを多く使用してしまいます。
+
+他のContractの呼び出しを避ける::
+他人が作成したContractの呼び出しは、呼び出す関数のGas Costが明確に分からないことが多く、リスクが高いです。そのため、良くテストされていて、広く使用されているライブラリのみを使用するようにしましょう。
+
+Gas Costの見積もりをする::
+開発の段階で事前にGas Costを見積もっておくのはとても良い方法です。
+
+見積もりの方法は次の通りです。
+
+以下のようにその処理にかかるであろうGasを見積もります。
+[source, javascript]
+var contract = web3.eth.contract(abi).at(address);
+var gasEstimate = contract.myAweSomeMethod.estimateGas(arg1, arg2, {from: account});
+
+以下のようにネットワークからGas Priceを取得し、Gasの量と掛け合わせることで、Gas Costを見積もります。
+[source, javascript]
+var gasPrice = web3.eth.getGasPrice();
+
+[source, javascript]
+var gasCostInEther = web3.fromWei((gasEstimate * gasPrice), 'ether');
+
+以下に具体例を示します。
+[source,javascript]
+----
+var FaucetContract = artifacts.require("./Faucet.sol");
+
+FaucetContract.web3.eth.getGasPrice(function(error, result) {
+    var gasPrice = Number(result);
+    console.log("Gas Price is " + gasPrice + " wei"); // "10000000000000"
+
+    // Get the contract instance
+    FaucetContract.deployed().then(function(FaucetContractInstance) {
+
+		// Use the keyword 'estimateGas' after the function name to get the gas
+		// estimation for this particular function (aprove)
+		FaucetContractInstance.send(web3.toWei(1, "ether"));
+        return FaucetContractInstance.withdraw.estimateGas(web3.toWei(0.1, "ether"));
+
+    }).then(function(result) {
+        var gas = Number(result);
+
+        console.log("gas estimation = " + gas + " units");
+        console.log("gas cost estimation = " + (gas * gasPrice) + " wei");
+        console.log("gas cost estimation = " +
+                FaucetContract.web3.fromWei((gas * gasPrice), 'ether') + " ether");
+    });
+});
+----
+
+このjsプログラムを実行することで、gasの見積もりを出力することができます。
+++++
+<pre data-type="programlisting">
+$ <strong>truffle develop</strong>
+
+truffle(develop)> <strong>exec gas_estimates.js</strong>
+Using network 'develop'.
+
+Gas Price is 20000000000 wei
+gas estimation = 31397 units
+gas cost estimation = 627940000000000 wei
+gas cost estimation = 0.00062794 ether
+</pre>
+++++
