@@ -1,0 +1,831 @@
+[[smart_contract_solidity_chapter]]
+= 第5章 Smart ContractとSolidity
+
+Ethereumには外部アカウント(EOA)とContractアカウントという2つのアカウントが存在するのでした。
+EOAはEthereumネットワークの外部に各オーナーが保持する秘密鍵によって制御されますが、Contractアカウントはそれ自体が持つSmart Contract(事前に書かれたプログラムコード)によって制御されます。
+この章ではそのSmart Contractについて解説していきます。
+
+[[what_is_smart_contract]]
+== Smart Contractとは何か
+Smart Contractは1990年代に暗号学者のNick Szaboが「デジタルな形式で規定された一連の約束」として定義した言葉です。
+
+Smart Contractという言葉には多くの誤解があるため、この本ではSmart Contractを「Ethereumネットワークプロトコルの一部としてのEVM(すなわち非中央集権的なWorld Computer)において決定論的に実行される不変なコンピュータプログラム」と定義します。
+
+言葉の定義を整理しておきます。
+
+不変なコンピュータプログラム::
+Smart Contractのコードは一度deployされると変更することができません。コントラクトを変更するには、新しく作成し直すしかありません。
+
+決定論的に実行される::
+Smart Contractの実行結果は、Smart Contractを実行させたトランザクションのパラメータと実行時のEthereumブロックチェーンの状態にのみ依存し、その他の実行環境によって変化することはありません。
+
+非中央集権的なWorld Computer::
+EVMは全てのEthereumノードでローカルインスタンスとして実行されますが、EVMの全てのインスタンスが同じ初期状態から始まり、同じ入力に対して同じ最終結果を出力するため、Ethereumネットワーク全体が1つのWorld Computerとして動作すると捉えられます。
+
+
+[[smart_contract_lifecycle]]
+== Smart Contractのライフサイクル
+
+Smart Contractのライフサイクルにおける特徴は以下の通りです。
+
+* Smart Contractは基本的にはSolidityやVyperなどの高級言語によってプログラミングされ、実行時にEVM byte codeに変換される。
+* 高級言語によって記述されたSmart Contractは、CompileしてEVM byte codeに変換されたのちに、Contract生成トランザクションによってEthereumネットワークにdeployされる。
+* 生成されたContractアカウントのaddressは、生成者のaddressとNonceによって決定される。
+* EOAは秘密鍵で制御されるが、Contractアカウントはそれ自体が持つSmart Contractコードに制御される。
+* Contractアカウントのaddressに対してトランザクションが実行されることによってのみ、その中にあるSmart Contractコードが実行される。
+* 実行されたContractアカウントがさらに他のContractアカウントを呼び出す・実行することもありますが、一番最初のContractアカウント実行は必ずEOAアカウントから発せられたトランザクションである。
+* EVMはsingle-threaded machineなので、Contractはいかなる場合でも並列実行されない。
+* トランザクションは、それによって実行した全てのContractプログラムがエラーなく実行された場合に、実行に伴うWorld State(全てのEOAやContractアカウントの状態)の変更をする。
+* 一方で、エラーによってプログラム実行が失敗した場合は、トランザクションが実行される前にrollbackする。この時、途中までの実行にかかったGasは実行者の残高から差し引かれる。
+* Contractアカウントが持つプログラムコードは変更できないが、SELFDESTRUCTというEVMオペコードを実行することで、削除することはできる。この場合の削除とは、Contractアカウント内のコードとストレージを削除するということであり、結果として中身が空のContractアカウントを残すことになる。
+アカウントの中身データの削除は、Ethereumノードが保持するデータ量を軽減することになるので推奨されており、実際に削除を行うとnegative gasというGas報酬が貰える。
+ただし、この方法でContractを削除してもそのコントラクトに関係するトランザクションの履歴は削除されない。
+また、Contractのコードの中にSELFDESTRUCTの機能が存在しない場合はContractの削除は不可能である。
+
+[[high_level_languages]]
+== Ethereumの高級言語
+
+EVMはEVM byte codeと呼ばれる特別な形式のコードを実行する仮想マシンです。EVM byte codeを直接プログラミングすることもできますが、扱いにくいので多くのプログラマーは高級言語でプログラムを記述し、それをコンパイラでEVM byte codeに変換します。
+
+EVMは特有のシステム変数と機能を持っているため、ここで使用する高級言語は汎用的な言語ではなく、 Smart Contract開発に特化した言語が作成されています。
+
+----
+一般的にプログラミング言語は、「宣言型(関数型)」と「命令型(手続き型)」の２つに分類することができます。
+命令型(手続き型)の言語は普段多くの人が慣れ親しんでいるプログラミング言語であり、プログラマがプログラムが動作するロジックとフローの一連の手続きを記述するものです。C++やJavaがこれに当たります。Lisp、JavaScript、Pythonなどの言語はこれらのハイブリット言語を歌っていますが、大抵の場合、命令型(手続き型)として記述されています。
+
+一方で、宣言型(関数型)は、プログラマが詳細な処理ロジックを書くことはせず、大まかな処理フローだけを記述する言語です。HaskellやSQLがこれに当たります。
+命令型(手続き型)と宣言型(関数型)の最も大きな違いは、宣言型(関数型)は関数の外では値(メモリの状態)が変更できないという点です。
+普段多くの人が書いているプログラムでは、例えばpythonであれば
+-----
+i = 0
+limit = 5
+
+while i < limit:
+  print(i)
+  i += 1
+-----
+のように変数に代入するという形でいくらでも値を変更することができると思います。これが命令型(手続き型)の特徴です。
+しかし、宣言型(関数型)言語では、SQLを例にすると
+-----
+DROP, INSERT, UPDATE
+-----
+などの関数によってのみ値の変更が可能ですね。
+----
+
+スマートコントラクトは「一度deployしたら基本的には変更できない」という性質上、バグを極力潰す必要があります。
+どこでも値が変更できる命令型言語よりも、値が変更できる条件が厳しい宣言型言語の方がバグを産みにくいため、スマートコントラクトを記述するための言語は宣言型のプログラミング言語が本当は望ましいです。
+
+しかし、人間は変化を拒み、慣れている物を使いたがる生き物であるため、
+以下に記述した複数のSmart Contractに特化したプログラミング言語のうち、最も使われているのは命令型言語であるSolidityです。笑
+
+LLL::
+関数型（宣言型）プログラミング言語で、文法はLispに似ている。LLLはEthereumのスマートコントラクト用の最初の高水準言語だったが、今日はめったに使用されていない。
+
+Serpent::
+Pythonに似た構文を持つ手続き型（命令的）プログラミング言語。一応、宣言型(関数型)のコードを書くこともできます。
+
+Solidity::
+JavaScript、C ++、Javaに似た構文を持つ手続き型（命令的）プログラミング言語。Ethereumスマートコントラクトで最も一般的で頻繁に使用される言語。
+
+Vyper::
+最も新しい言語で、今も開発が進んでいる。Serpentと似ていてPython likeな構文。
+
+Bamboo::
+Erlangの影響を受けて、明示的な状態遷移を持ち、反復フロー(loop)が存在しない新しい言語。
+
+
+
+[[smart_contract_solidity_chapter]]
+== SolidityでSmart Contractを作成してみる
+
+この章では一番人気のSolidityを使ってSmart Contractを学んでいきます。
+SolidityはEthereum共同開発者であるGavin Woodによって作成された言語です。
+
+Solidityで書かれたプログラムコードをEVM byte codeに変換するコンパイラはsolcというものがあります。
+Solidity自体のversionとコンパイラsolcのバージョンはそれぞれ互換性があるものにする必要があるので注意が必要です。
+
+[[solidity_pragma_and_install]]
+=== SolidityのversionとInstall
+Solidityのversionは、"Semantic Versioning"というバージョニング手法に則って管理されています。
+"Semantic Versioning"とは、
+
+* APIの変更に互換性のない場合は メジャーバージョン
+* 後方互換性があり機能性を追加した場合は マイナーバージョン
+* 後方互換性を伴うバグ修正をした場合は パッチバージョン
+
+という3つのバージョンの番号を
+----
+MAJOR.MINOR.PATCH
+----
+のように区切って表記する方法です。
+
+しかし、現在solidityでは
+----
+0.MAJOR.MINOR
+----
+という管理の仕方をしており、現在のバージョンは0.4.24で、次回のメジャーアップデートが0.5になっています。
+
+solidityは急速にアップデートされていくので、常に最新のリリースをインストールするのが良いと思います。
+
+ダウンロード・インストール方法はググって下さい。
+
+[[ide_of_solidity]]
+=== 開発環境(Remix IDE)
+他のプログラム言語と同様に、Solidityのプログラムコード自体は単なるテキストファイルなので、コンパイラとしてsolcさえあれば、どんなエディタを使ってプログラムを書いても構いません。
+
+プログラムのソースコードが書かれたテキストファイルの拡張子を.solにするだけでSolidityコンパイラによってSolidityプログラムとして認識されます。
+
+Remix IDEやEthFiddleなどのWebブラウザベースの開発環境もあるのでオススメです。
+
+[[solidity_compiler]]
+=== Solidity Compiler (solc)によるコンパイル
+solcによるコンパイルは以下のようなコマンドで行います。
+
+例) +
+Faucet.solというSolidityプログラムを作成したとしてコンパイルを実行
+++++
+<pre data-type="programlisting">
+$ <strong>solc --optimize --bin Faucet.sol</strong>
+======= Faucet.sol:Faucet =======
+Binary:
+6060604052341561000f57600080fd5b60cf8061001d6000396000f300606060405260043610603e5
+763ffffffff7c01000000000000000000000000000000000000000000000000000000006000350416
+632e1a7d4d81146040575b005b3415604a57600080fd5b603e60043567016345785d8a00008111156
+06357600080fd5b73ffffffffffffffffffffffffffffffffffffffff331681156108fc0282604051
+600060405180830381858888f19350505050151560a057600080fd5b505600a165627a7a723058203
+556d79355f2da19e773a9551e95f1ca7457f2b5fbbf4eacf7748ab59d2532130029
+</pre>
+++++
+
+出力されている結果は、Ethereumブロックチェーンにdeployされる16進数直列化バイナリです。
+
+[[eth_contract_abi_sec]]
+== EthereumのコントラクトにおけるABI
+
+ABIは"Application Binary Interface"の略であり、コンピュータソフトウェアにおいて2つのソフトウェア間でBinary codeを介した通信をする際のインターフェースです。
+これだけではよく分からない人もいると思うので、以下で解説していきます。
+
+[[api_image]]
+.APIの例(LINE Messaging API)
+image::images/api_image.png["API"]
+
+まず、ABIと混同しやすいAPIについて見ていきます。
+API(Application Program[ming] Interface)は、以下の図のようにソフトウェア間で「プログラムコード同士で」やり取りをする場合のインターフェースでした。
+これは通信をする両ソフトウェアが高級言語でのプログラムコードに対応しているために実現できます。
+
+[[abi_os_app]]
+.OSとアプリケーション間におけるABI
+image::images/abi_os_app.png["ABI_OS"]
+
+一方で、ABIは「バイナリコードを介して」やり取りをする場合のインターフェースと考えて下さい。
+身近な例では、OSとアプリケーションのデータのやり取りに使用されています。OSはbinary codeを扱っており、アプリケーションは私たちが記述した高級プログラムコードを扱っているので、その変換をしながらデータのやり取りを可能にしてくれるのがABIというわけです。
+
+[[abi_image]]
+.EthereumにおけるABI
+image::images/abi_image.png["ABI"]
+
+Ethereumにおいて、EVMはEVM byte codeしか処理することができませんでした。EVMは仮想マシンとして、各フルノードで稼働していると考えて下さい。
+(彼らをまとめてThe World Computerと言ったりします)
+
+Ethereumブロックチェーンにdeployされているコントラクトは、このEVMで動いているネットワークにEVM byte codeとして保存されているので、直接関数の内容を読み取ることは難しいですし、高級言語で書かれ、伝搬してきたTransactionをそのままEVMが実行することもできません。
+
+そこでそれらの相互の変換、橋渡しをしてくれるのがABIなのです。
+
+[[abi_app_image]]
+.EthereumにおけるApp例(Wallet)
+image::images/abi_app_image.png["ABI_APP"]
+
+このようにABIはEthereumブロックチェーンと通信するあらゆるプログラム、アプリケーションに不可欠です。
+上図は、Walletアプリケーションの例です。
+
+イメージを掴むためにコマンドの例を挙げておきます。
+開発者は以下のようなコマンドを使用することで、Ethereumブロックチェーン上にあるコントラクトの内容を高級言語で閲覧することができます。
+
+++++
+<pre data-type="programlisting">
+$ <strong>solc --abi Faucet.sol</strong>
+======= Faucet.sol:Faucet =======
+Contract JSON ABI
+[{"constant":false,"inputs":[{"name":"withdraw_amount","type":"uint256"}], \
+"name":"withdraw","outputs":[],"payable":false,"stateMutability":"nonpayable", \
+"type":"function"},{"payable":true,"stateMutability":"payable", \
+"type":"fallback"}]
+</pre>
+++++
+
+[[solidity_version]]
+=== Solidityコンパイラと言語のversion指定
+solidity自体のversionとコンパイラであるsolcのversionは揃える必要があると前述していました。
+
+もし仮に「Solidity version 0.4.19で追加された新機能を含んでいるプログラムコード」を0.4.18用のコンパイラでコンパイルしようとすれば、それはエラーになります。
+
+そこでプログラムコードの先頭に
+----
+pragma solidity ^0.4.19;
+----
+というバージョンプラグマを書いておくことで「コンパイラのversionが0.4.19以上じゃないとこのプログラムはコンパイルできません」とコンパイラに教えることができます。
+
+このバージョンプラグマにある^は、0.4.19以上の"マイナーアップデート”でこのプログラムが実行できるということを示します。
+つまり、0.4.20のコンパイラでコンパイル可能ですが、0.5.0のコンパイラではコンパイル不可能だということです。
+
+ちなみに、このバージョンプラグマはプログラム実行時にはEVM byte codeにコンパイルされません。
+
+
+[[solidity_program]]
+== Solidityでプログラミング
+
+[[data_type]]
+=== データ型
+Boolean(bool)::
+真偽値型。TrueかFalse
+
+Integer(int, uint)::
+int8からuint256までの8bit単位で宣言された符号付き整数(int)と符号無し整数(uint)。intやuintだけで接尾辞なしで用いるとEVMのワードサイズに合わせて256bitで使用される
+
+Fixed point (fixed, ufixed)::
+固定小数点型。"ufixedMxN"のように表され、Mの部分がbitサイズ(8〜256)、Nの部分が小数点以下の桁数(最大18まで) +
+例) ufixed256x2
+
+Address::
+20byteのEthereumアドレス。addressオブジェクトには多数のメンバ関数が存在する +
+例) balance(そのアドレスのアカウントのether残高を返す) +
+transfer(etherを指定したアドレスに送る)
+
+Byte array(固定)::
+固定長配列。bytes1からbytes32までで宣言される
+
+Byte array (動的)::
+可変長配列。bytesかstringで宣言される
+
+Enum::
+ユーザー定義の離散値を列挙するデータ型 +
+enum NAME {label1, label2, ...} のように記述する
+
+Arrays::
+固定または動的な配列 +
+例) uint32[][5] :符号無し整数の5つの可変長配列の固定長配列
+
+Struct::
+構造体型 +
+struct NAME {型1 変数1; 型2 変数2; ...}と定義される
+
+Mapping::
+マッピング型。key => valueのペアを定義する +
+mapping(keyの型 => valueの型) NAME と定義される
+
+時間単位(Time units)::
+seconds, minutes, hours, daysは接尾辞として使用可能
+
+Ether units::
+wei, finney, szabo, etherは接尾辞として使用可能
+
+
+[[variable_and_function]]
+=== 定義済みのグローバル変数と関数
+[[transaction_and_msg_call]]
+==== トランザクション/message call関係
+msg.sender::
+そのContractを呼び出したmessage call トランザクションを作成したアカウントアドレスを取得する。
+これは必ずしもEOAではなく、Contractアカウントでもあり得る
+
+msg.value::
+そのContractを呼び出したmessage callトランザクションで送られてきたetherの値
+
+msg.gas::
+そのコントラクト呼び出しトランザクションに残っているgasの量。Solidity 0.4.21から廃止され、gasleft関数に置き換わった。
+
+msg.data::
+そのコントラクトを呼び出したmessage callトランザクションのデータpayload
+
+msg.sig::
+データpayloadの最初の4バイト。コントラクトの中でどの関数を実行するかが指定されている。
+
+※EOAアカウントAからContractアカウントBがcallされ、Bの中のプログラムによってContractアカウントBからContractアカウントCがcallされた場合、msgの全ての値がAの値からBの値に更新されますが、delegatecall関数という元々のmsgの値のまま別のContractやライブラリを呼び出す(ここでいうとmsgの値はAのままBからCをコールする)という例外もあります。
+
+[[transaction]]
+==== トランザクション関係
+
+tx.gasprice::
+そのトランザクションのgasprice
+
+tx.origin::
+そのトランザクションを発したEOAアドレス
+
+[[block]]
+==== ブロック関係
+
+block.blockhash(_blockNumber_)::
+指定したブロック番号のブロックハッシュ(過去256ブロックまで取得可能) +
+Solidity 0.4.22で廃止され、blockhash関数に置き換えられた。
+
+block.coinbase::
+現在のブロックのブロック報酬と手数料の受取人アドレス
+
+block.difficulty::
+現在のブロックのPoW difficulty
+
+block.gaslimit::
+現在のブロックのgaslimit(ブロックに含む全てのトランザクションで使用するgas総額の最大値)
+
+block.number::
+現在のブロックのブロック番号(block height)
+
+block.timestamp::
+現在のブロックのTimestamp
+
+[[address]]
+==== address オブジェクト
+
+address.balance::
+アドレスのether残高(単位はwei)
+
+address.transfer(_amount_)::
+指定した額のweiをアドレスに送る。エラーが発生した場合に例外処理が可能
+
+address.send(_amount_)::
+指定した額のweiをアドレスに送る。エラーが発生した場合は例外処理をせず、Falseを返す
+
+address.call(_payload_)::
+引数に渡したデータpayloadを使って他のコントラクトを呼び出す。エラー時にはFalseを返す
+
+address.callcode(_payload_)::
+引数に渡したデータpayloadを使って他のコントラクトを呼び出す。
+現在は非推奨のmethodなので使用しない方がいい
+
+address.delegatecall()::
+他のコントラクトを呼び出す。エラー時にはFalseを返す
+
+※address.call、address.callcode、address.delegatecallの違いは以下のサイト参照 +
+https://qiita.com/doskin/items/c4fd8952275c67deb594[delegatecall callcode call の違い]
+
+[[built_in_function]]
+==== 組み込み関数
+addmod, mulmod::
+モジュロ加算と乗算をする関数 +
+例) addmod(x,y,k) ： (x + y) % k
+
+keccak256, sha256, sha3, ripemd160::
+様々なハッシュ関数
+
+ecrecover::
+署名からメッセージに署名するために使用されたアドレスを導出する関数
+
+this::
+現在実行中のContractアカウントのアドレスを返す
+
+[[function]]
+=== 関数
+Solidityにおける関数は、以下のように定義することができます。
+++++
+<pre data-type="programlisting">
+function FunctionName([<em>parameters</em>]) {public|private|internal|external}
+[pure|constant|view|payable] [<em>modifiers</em>] [returns (<em>return types</em>)]
+</pre>
+++++
+
+それぞれの要素について見て行きましょう。
+
+FunctionName::
+関数名 +
+各Contractに1つだけ名前なしのfallback関数を定義することができる。このfallback関数は引数を取ることも返り値を返すこともできない関数で、トランザクションによって関数名が指定されていない時に呼び出されるものである。
+
+parameters::
+引数。データ型と共に名前を定義する。
+
+public::
+定義されたコントラクトとこのコントラクトを継承したコントラクトから呼び出すことができかつ、外部(他のContractやEOAから発せられたトランザクション)から呼び出すことができる。関数はデフォルトでこのpublicになる。
+
+external::
+外部からのみ呼び出すことができる。
+thisを使うと内部から外部的に関数を呼び出すことが可能になる。
+外部から関数を呼び出す場合は、引数で渡された値を一度メモリに保存するのでメモリを消費するが、externalでの呼び出しはメモリを消費せず、gasがpublicよりも安くなる。
+
+internal::
+定義されたコントラクトとこのコントラクトを継承したコントラクからのみ呼び出すことができる。変数はデフォルトでinternalになる。
+
+private::
+定義されたコントラクト内でのみ使用することができる。定義されたコントラクトを継承した子のコントラクトではprivateな関数と値を使用することはできない。
+
+※public, external, internal, privateの違いは以下のサイト参照
+https://tomokazu-kozuma.com/differences-between-public-private-external-and-internal-in-solidity/[public, privateとexternal, internalの違いと使い所]
+
+constant と view::
+viewを付与することで、その関数はいかなるアカウントの状態も変更しないことを明記できる(いわゆる読み取り専用関数) +
+constantもviewと同じ意味であり、Solidity 0.5では、viewではなくconstantを使用することが強制される。
+
+pure::
+pureを付与した関数は、メモリ上の変数を読みも書きもしない関数になる。つまり、引数以外のいかなるデータも参照せずに、値を返す関数になる。
+これによって宣言型プログラミングに近いコーディングができる。
+
+payable::
+payableを付与した関数はEtherの支払いを受け取ることができる関数になる。payableがない関数は、Etherの入金を拒否する。
+coinbase報酬(ブロック生成報酬)の支払いとSELFDESTRUCT継承は、例外としてfallback関数にpayableが付与されていなくても支払いを受け取る。
+
+[[constructor]]
+=== Contractのコンストラクタとselfdestructとその例
+ContractのライフサイクルはContract作成トランザクションに伴うコンストラクタによって始まり、SELFDESTRUCTによって終了します。
+
+まず、コンストラクタはContractが作成された時に一度だけ実行される関数です。
+Solidity 0.4.21までは、以下のようにContractと同じ名前の関数がコンストラクタになるというルールでした。
+
+[source,solidity]
+----
+contract MEContract {
+	function MEContract() {
+		// これがコンストラクタになります
+	}
+}
+----
+
+しかし、この形式ではContract名が変更されて、コンストラクタ名が変更されなかった場合、この関数がコンストラクタではなくなってしまいます。
+また両者の名前を揃えるつもりでもタイプミスをする可能性もあります。このようにミスやバグを引き起こす可能性が高いという理由でSolidity 0.4.22からは以下のようにコンストラクタを定義するようになりました。
+
+[source,solidity]
+----
+pragma ^0.4.22
+contract MEContract {
+	constructor () {
+		// これがコンストラクタになります
+	}
+}
+----
+こうすることで仮にContractの名前が変更されても、コンストラクタに影響はないですし、こちらの方がどの関数がコンストラクタなのかを見分けやすいですよね。
+
+一方で、selfdestructは、SELFDESTRUCTという特殊なEVMオペコードによってContractの内容が破棄されるというものです。(昔はSUICIDEというオペコードでしたが印象が悪いので変更されました)
+Solidityでは、以下のように中身を削除するContractアカウントに残っているether残高を受け取るアカウントのaddressを引数にとってSELFDESTRUCTオペコードを実行する組み込み関数が用意されています。
+
+
+[source,solidity]
+----
+selfdestruct(address recipient);
+----
+
+ただし、このSELFDESTRUCTはContract自体にデフォルトでは存在しないので、Contractの内容を削除するにはこのコマンドを追加する必要があります。
+Contractの利用者はこのSELFDESTRUCTコマンドが存在するかどうかでContractが永久に残るものなのかをチェックすることができます。
+
+コンストラクトとselfdestructの具体例を以下に見て行きます。
+
+
+[source,solidity]
+----
+// Version of Solidity compiler this program was written for
+pragma solidity ^0.4.22;
+
+// Our first contract is a faucet!
+contract Faucet {
+
+	address owner;
+
+	// Initialize Faucet contract: set owner
+	constructor() {
+		owner = msg.sender;
+	}
+
+[...]
+----
+
+コンストラクタはこのように定義され、msg.senderを変数に格納しておくことで、このコントラクトの作成者(オーナー)のアドレスを保持することが多いです。
+
+[source,solidity]
+----
+// Contract destructor
+function destroy() public {
+	require(msg.sender == owner);
+	selfdestruct(owner);
+}
+----
+
+selfdestructはこのように定義され、コントラクトの作成者のみがselfdestructという組み込み関数を実行できるようにするのが一般的です。
+
+[[modifier]]
+=== 関数修飾子
+
+Solidityには関数修飾子(modifier)という特別なタイプの関数があり、modifierを関数の定義に加えることによって、その関数に修飾子を追加します。
+modifierは以下のように定義します。
+
+[source,solidity]
+----
+modifier onlyOwner {
+    require(msg.sender == owner);
+    _;
+}
+----
+modifierにある _; は、この場所に修飾子を付与した関数の中身の処理を入れ込むという意味です。
+
+modifierは以下のように関数に付与します。
+
+[source,solidity]
+----
+function destroy() public onlyOwner {
+    selfdestruct(owner);
+}
+----
+
+modifierの中からはmodifierが付与されている関数の中の変数は使用できますが、modifierが付与されている関数の中からmodifier内部の変数にはアクセスできません。
+
+
+[[inheritance]]
+=== コントラクトの継承
+Solidityのコントラクトは継承することができます。
+以下に具体的な継承の書き方を見て行きます。
+
+継承する時には、以下のようにContractの定義時に親コントラクトを is Contract名で書きます。
+[source,solidity]
+----
+contract Child is Parent {
+  ...
+}
+----
+
+以下のように、カンマ区切りで複数のContractを継承することもできます。
+
+[source,solidity]
+----
+contract Child is Parent1, Parent2 {
+  ...
+}
+----
+
+ほとんどのContractが必要とするであろうconstructorとmodifier(onlyOwner)、selfdestructを具体例に見ていくと、以下のように継承を使います。
+
+[source,solidity]
+----
+contract owned {
+	address owner;
+
+	// Contract constructor: set owner
+	constructor() {
+		owner = msg.sender;
+	}
+
+	// Access control modifier
+	modifier onlyOwner {
+	    require(msg.sender == owner);
+	    _;
+	}
+}
+----
+
+[source,solidity]
+----
+contract mortal is owned {
+	// Contract destructor
+	function destroy() public onlyOwner {
+		selfdestruct(owner);
+	}
+}
+----
+
+[source,solidity]
+----
+contract Faucet is mortal {
+    // Give out ether to anyone who asks
+    function withdraw(uint withdraw_amount) public {
+        // Limit withdrawal amount
+        require(withdraw_amount <= 0.1 ether);
+        // Send the amount to the address that requested it
+        msg.sender.transfer(withdraw_amount);
+    }
+    // Accept any incoming amount
+    function () public payable {}
+}
+----
+
+
+[[error_handling]]
+=== エラーハンドリング(例外処理)
+
+Solidityでは、エラー処理にはassert, require, revert, throwの4つを使用します。throwは将来的にはなくなる予定の非推奨関数です。
+
+assertとrequireは、「指定した条件がFalseの場合はエラーを伴って実行を停止する」という関数です。
+一般的に、assertは条件がTrueであると予想される時に使用します。
+
+onlyOwner modifierで使用したように、何らかの入力をチェックする場合には基本的にはFalseであることが期待されるので、以下のようにrequireを使用していました。
+
+[source,solidity]
+----
+require(msg.sender == owner);
+----
+
+以下のようにエラーになった時に表示するメッセージを付与することもできます。しかし、エラーメッセージを表示すると少しGasが高くなるので、エラーメッセージを出すコストも考える必要があります。
+[source,solidity]
+----
+require(msg.sender == owner, "Only the contract owner can call this function");
+----
+
+revert関数とthrow関数は、Contractの実行をそこで停止し、状態の変更を元に戻します。
+
+[[event]]
+=== Event
+
+以降の章で説明して行きますが、トランザクションが成功または失敗して終了すると、トランザクションの実行ログが記録されている"Receipt"が生成されます。
+EventはこのReceiptに刻まれるログを生成するために使用されるオブジェクトです。
+
+Eventの例を以下に見て行きます。
+
+
+以下のようにbyte32(固定長配列型)のstoreDataに値を入れ込むSetに関するeventをContractに作成します。この時、eventの結果としてログ出力したい変数の型と名前を指定しておきます。
+
+そして実行ログを残したいset関数の中で、「emit イベント名(ログとして出力したい変数)」と定義することで、この関数が実行された時に、Eventが発火するようになります。
+
+[source,solidity]
+----
+contract SimpleStorage {
+    bytes32 storedData;
+    //イベント設置
+    event Set(address from,bytes32 stored);
+
+    function set(bytes32 x) {
+        storedData = x;
+
+        //イベント発火
+        Set(msg.sender,x);
+    }
+    function get() constant returns (bytes32 retVal) {
+        return storedData;
+    }
+}
+----
+
+このようにEventを付与したset関数が実行された時、以下のようにFront end側のweb3.jsライブラリでこの関数に設定されたeventが実行過程で発火するかどうかを監視し、その結果を出力することができます。
+
+[source,solidity]
+----
+var Web3 = require('web3');
+var web3 = new Web3();
+
+web3.setProvider(new web3.providers.HttpProvider("http://localhost:8545");
+
+//simplestorageのABI
+var ABI = require('./simplestorage.json');
+
+//デプロイしたアドレス
+var address = '0xf9f0ce2e38fbe115d2500606ebd7750f8876c8cc
+';
+
+var simpleStorage = web3.eth.contract(ABI).at(address);
+var event = simpleStorage.Set();
+//イベント監視
+event.watch(function (error, result) {
+ console.log('watching "Set" event!');
+  if (!error)
+    console.log(result);
+});
+----
+
+Eventが発火した結果として以下のようなresultが得られます。
+----
+{ from: '0x2a595f16eee4cb0c17d9a2d939b3c10f6c677243', stored: "hello eth!" }
+----
+
+[[call_other_contract]]
+=== 他のコントラクトの呼び出し
+Contractから他のContractを呼び出すのは、とても有用ですが、大きなリスクがあることも覚えておきましょう。Contractの中ではしばしば他人のContractを呼び出すため、その中身が理解できていないと危険であり、そのContractがどのような関数を含んでいるかを完全に把握する必要があります。
+
+最も安全な方法は呼び出す他のContractを自分で作成している場合です。
+以下の例では、自身で作ったFaucetコントラクトをTokenというコントラクトで呼び出しています。
+[source,solidity]
+----
+import "Faucet.sol";
+
+contract Token is mortal {
+	Faucet _faucet;
+
+	constructor() {
+		_faucet = (new Faucet).value(0.5 ether)();
+	}
+
+	function destroy() ownerOnly {
+		_faucet.destroy();
+	}
+}
+----
+
+このように自身の作成したContractファイルをimport文で読み込み、Faucet _faucetという形で呼び出す側の関数の中で定義します。
+newを使用することでインスタンスを作成できます。またvalueというメソッドでetherの転送を指定しています。
+またFaucetコントラクト内の関数を呼び出すこともでき、destroy関数の中でFaucetコントラクトのdestroy関数を呼んでいます。
+
+
+一方で、既存のインスタンスのaddressを指定して他のContractを呼び出すという方法があります。
+以下のように行われます。
+
+[source,solidity]
+----
+import "Faucet.sol";
+
+contract Token is mortal {
+
+	Faucet _faucet;
+
+	constructor(address _f) {
+		_faucet = Faucet(_f);
+		_faucet.withdraw(0.1 ether)
+	}
+}
+----
+
+呼び出す側のContractで呼び出すコントラクトのアドレスを引数_fとして受け取ります。それをFaucetオブジェクトに変換して、そのFaucetオブジェクトからFaucetコントラクトの中のwithdraw関数を呼んでいます。
+
+この方法は、引数として受け取ったaddressが本当にFaucetオブジェクトであるかわからないため、非常にリスクが高いです。
+
+また、callメソッドやdelegatecallを使用した他のContractの呼び出しもあります。
+
+[source,solidity]
+----
+contract Token is mortal {
+	constructor(address _faucet) {
+		if !(_faucet.call("withdraw", 0.1 ether)) {
+			revert("Withdrawal from faucet failed");
+		}
+	}
+}
+----
+のように引数に受け取ったaddressから直接的にcall関数を呼び出すというさらにリスクが高いものになっています。
+call関数は、エラーが発生したらfalseを返すので、エラー処理の戻り値を評価することもできます。
+
+delegatecallメソッドは、msg.senderを呼び出し元のContractでの状態(呼び出し元のContractを呼び出したアカウントのaddress)から変化させずに、別のContractを呼び出す関数です。
+delegatecallで注意しなければいけない点として、あるContractから他のContractの呼び出しには、通常のcallがデフォルトでは使われますが、あるContractからライブラリの呼び出しにはデフォルトでdelegatecallが使われるという点は覚えておきましょう。
+
+
+[[gas]]
+== コントラクトとGas
+Gasはスマートコントラクトプログラミングでは非常に重要な概念です。
+GasはEVMにトランザクションの処理を実行させるための燃料であり、これがあることによってトランザクションが実行できる最大の計算量を制限しています。
+
+トランザクションの実行処理の途中で、Gasが切れると以下の一連の現象が起きます。
+
+* "ガス切れ"の例外が発生する
+* Contractの状態がトランザクション実行前に戻される
+* 途中までのトランザクション実行に使用されたGasは、返還されない
+
+このGasはトランザクションを実行するuserによって支払われることになるというのが重要です。
+もちろんuserは、etherを支払いたくはないので、実行するために必要なGasが高いContractは実行したがりませんね。
+そのため、開発者はそのContractを呼び出すのに必要なGasを最小限に抑えることを常に考える必要があります。
+
+Gasを最小限に抑えるために以下のような手法があります。
+
+動的にサイズが変化する配列の使用を避ける::
+配列の各要素に対して処理を実行したり、特定の要素を検索するようなループの処理は頻繁に使用されますが、その時に配列のサイズが固定されていないと多くの計算処理が行われてしまう可能性があり、Gasを多く使用してしまいます。
+
+他のContractの呼び出しを避ける::
+他人が作成したContractの呼び出しは、呼び出す関数のGas Costが明確に分からないことが多く、リスクが高いです。そのため、良くテストされていて、広く使用されているライブラリのみを使用するようにしましょう。
+
+Gas Costの見積もりをする::
+開発の段階で事前にGas Costを見積もっておくのはとても良い方法です。
+
+見積もりの方法は次の通りです。
+
+以下のようにその処理にかかるであろうGasを見積もります。
+[source, javascript]
+var contract = web3.eth.contract(abi).at(address);
+var gasEstimate = contract.myAweSomeMethod.estimateGas(arg1, arg2, {from: account});
+
+以下のようにネットワークからGas Priceを取得し、Gasの量と掛け合わせることで、Gas Costを見積もります。
+[source, javascript]
+var gasPrice = web3.eth.getGasPrice();
+
+[source, javascript]
+var gasCostInEther = web3.fromWei((gasEstimate * gasPrice), 'ether');
+
+以下に具体例を示します。
+[source,javascript]
+----
+var FaucetContract = artifacts.require("./Faucet.sol");
+
+FaucetContract.web3.eth.getGasPrice(function(error, result) {
+    var gasPrice = Number(result);
+    console.log("Gas Price is " + gasPrice + " wei"); // "10000000000000"
+
+    // Get the contract instance
+    FaucetContract.deployed().then(function(FaucetContractInstance) {
+
+		// Use the keyword 'estimateGas' after the function name to get the gas
+		// estimation for this particular function (aprove)
+		FaucetContractInstance.send(web3.toWei(1, "ether"));
+        return FaucetContractInstance.withdraw.estimateGas(web3.toWei(0.1, "ether"));
+
+    }).then(function(result) {
+        var gas = Number(result);
+
+        console.log("gas estimation = " + gas + " units");
+        console.log("gas cost estimation = " + (gas * gasPrice) + " wei");
+        console.log("gas cost estimation = " +
+                FaucetContract.web3.fromWei((gas * gasPrice), 'ether') + " ether");
+    });
+});
+----
+
+このjsプログラムを実行することで、gasの見積もりを出力することができます。
+++++
+<pre data-type="programlisting">
+$ <strong>truffle develop</strong>
+
+truffle(develop)> <strong>exec gas_estimates.js</strong>
+Using network 'develop'.
+
+Gas Price is 20000000000 wei
+gas estimation = 31397 units
+gas cost estimation = 627940000000000 wei
+gas cost estimation = 0.00062794 ether
+</pre>
+++++
