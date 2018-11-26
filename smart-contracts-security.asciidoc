@@ -708,9 +708,311 @@ contract WalletLibrary is WalletEvents {
 
 == エントロピーの錯覚
 
+Etheruemブロックチェーン上のすべてのトランザクションは決定論的な状態遷移をする操作です。つまり全てのトランザクションは不確実性はなく、計算可能な方法でEthereumエコシステムのグローバルな状態を変更します。これはEthereumにはランダム性やエントロピーの源泉がないという示唆でもあります。分散的なランダム性やエントロピーを達成するのはたくさんの解決策も提案されている有名な課題です。
+
+=== 脆弱性
+
+Ethereum上に作られた初めのコントラクトのいくつかはギャンブルを元にしているものでした。基本的、ギャンブルは不確実性を必要としますが、ブロックチェーン上でギャンブルのシステムを作るのは難しいです。不確実性は外部からブロックチェーンに取り入れる必要があるというのは明らかです。これはプレイヤー間の賭けでは可能ですが、ハウス（主催者）として振る舞うコントラクトを実装したい場合ははるかに難しくなります。共通の落とし穴はハッシュやタイムスタンプ、ブロック番号やgas上限など未知の値を含む変数である、未来のブロック変数を使用することです。この問題はブロックをマイニングするマイナーによって操作されてしまい、実際はランダムにならないということです。例えば、次のブロックハッシュが偶数番号で終わっていたらブラックナンバーを返すロジックを持つルーレットスマートコントラクトを考えてみましょう。マイナーはブラックに1Mドルを賭けるでしょう。もしマイナーらが次のブロックを採掘して、奇数で終わるハッシュを見つけた場合、彼らはそのブロックを公開せずに偶数番号のハッシュのブロックを採掘するまで別のブロックをマイニングします（ブロック報酬と手数料が1Mドルより低いという想定）。過去や現在の変数を使用することはさらに危険です。さらにブロック変数を単独で使用することはあるブロックのトランザクションの疑似乱数がすべて同じになることを意味し、攻撃者はブロック内のトランザクションをすべて実行して勝利を増やすことができます。
+
+=== 対策
+
+エントロピーやランダム性の源泉はブロックチェーンの外部である必要があります。これはcommit–revealのようなシステムを備えるピア間で実行されるか、トラストモデルを参加者のグループへ変更することによって行うことができます。これはまたランダム性オラクルとして振る舞う中央集権的なエンティティを介して行うことができます。一般的に、ブロック変数はマイナーが操作することができるのでエントロピーの源泉として使用するべきではありません。
+
+=== 現実としての事例: PRNG Contracts
+
+2018年2月のArseny Reutovによる分析によると、疑似乱数の類を使用している動いているスマートコントラクトの数は3649個であり、43のコントラクトは悪用されている可能性があることを発見した。
+
 == 外部コントラクトの参照
 
+Ethereumワールドコンピュータの利点の１つはコードの再利用ができたり、すでにネットワークにデプロイされているコントラクトと相互作用することができることです。結果として、外部呼び出しメッセージを介して大量のコントラクトが外部コントラクトを参照しています。これらの外部呼び出しは悪意のあるユーザーの意図を明白ではない方法によって隠すことができます。
+
+=== 脆弱性
+
+Solidityでは、そのアドレスのコードがキャストされるコントラクトタイプを表すかに関係なく、どんなアドレスでもコントラクトにキャストできます。これは特にコントラクトの作成者が悪意のあるコードを隠すときに、問題を引き起こします。例を見てみましょう。
+
+[source, Javascript]
+------
+// encryption contract
+contract Rot13Encryption {
+
+   event Result(string convertedString);
+
+    // rot13-encrypt a string
+    function rot13Encrypt (string text) public {
+        uint256 length = bytes(text).length;
+        for (var i = 0; i < length; i++) {
+            byte char = bytes(text)[i];
+            // inline assembly to modify the string
+            assembly {
+                // get the first byte
+                char := byte(0,char)
+                // if the character is in [n,z], i.e. wrapping
+                if and(gt(char,0x6D), lt(char,0x7B))
+                // subtract from the ASCII number 'a',
+                // the difference between character <char> and 'z'
+                { char:= sub(0x60, sub(0x7A,char)) }
+                if iszero(eq(char, 0x20)) // ignore spaces
+                // add 13 to char
+                {mstore8(add(add(text,0x20), mul(i,1)), add(char,13))}
+            }
+        }
+        emit Result(text);
+    }
+
+    // rot13-decrypt a string
+    function rot13Decrypt (string text) public {
+        uint256 length = bytes(text).length;
+        for (var i = 0; i < length; i++) {
+            byte char = bytes(text)[i];
+            assembly {
+                char := byte(0,char)
+                if and(gt(char,0x60), lt(char,0x6E))
+                { char:= add(0x7B, sub(char,0x61)) }
+                if iszero(eq(char, 0x20))
+                {mstore8(add(add(text,0x20), mul(i,1)), sub(char,13))}
+            }
+        }
+        emit Result(text);
+    }
+}
+------
+
+このコードは文字列を取り、13個右にずらすだけのシンプルに暗号化するものです。
+
+次のコントラクトはその暗号化を使用したものです。
+
+[source, Javascript]
+------
+import "Rot13Encryption.sol";
+
+// encrypt your top-secret info
+contract EncryptionContract {
+    // library for encryption
+    Rot13Encryption encryptionLibrary;
+
+    // constructor - initialize the library
+    constructor(Rot13Encryption _encryptionLibrary) {
+        encryptionLibrary = _encryptionLibrary;
+    }
+
+    function encryptPrivateData(string privateInfo) {
+        // potentially do some operations here
+        encryptionLibrary.rot13Encrypt(privateInfo);
+     }
+ }
+------
+
+このコントラクトの問題点はencryptionLibraryアドレスがpublicでない、もしくは定数でないことです。したがって、このコントラクトの開発者はconstructor内でこのコントラクトを指し示すアドレスを与えることが出来てしまっています。
+
+[source, Javascript]
+------
+// encryption contract
+contract Rot26Encryption {
+
+   event Result(string convertedString);
+
+    // rot13-encrypt a string
+    function rot13Encrypt (string text) public {
+        uint256 length = bytes(text).length;
+        for (var i = 0; i < length; i++) {
+            byte char = bytes(text)[i];
+            // inline assembly to modify the string
+            assembly {
+                // get the first byte
+                char := byte(0,char)
+                // if the character is in [n,z], i.e. wrapping
+                if and(gt(char,0x6D), lt(char,0x7B))
+                // subtract from the ASCII number 'a',
+                // the difference between character <char> and 'z'
+                { char:= sub(0x60, sub(0x7A,char)) }
+                // ignore spaces
+                if iszero(eq(char, 0x20))
+                // add 26 to char!
+                {mstore8(add(add(text,0x20), mul(i,1)), add(char,26))}
+            }
+        }
+        emit Result(text);
+    }
+
+    // rot13-decrypt a string
+    function rot13Decrypt (string text) public {
+        uint256 length = bytes(text).length;
+        for (var i = 0; i < length; i++) {
+            byte char = bytes(text)[i];
+            assembly {
+                char := byte(0,char)
+                if and(gt(char,0x60), lt(char,0x6E))
+                { char:= add(0x7B, sub(char,0x61)) }
+                if iszero(eq(char, 0x20))
+                {mstore8(add(add(text,0x20), mul(i,1)), sub(char,26))}
+            }
+        }
+        emit Result(text);
+    }
+}
+------
+
+このコントラクトは26文字ずらすROT26を使用していますが、詳しく見る必要はないです。
+
+[source, Javascript]
+------
+contract Print{
+    event Print(string text);
+
+    function rot13Encrypt(string text) public {
+        emit Print(text);
+    }
+ }
+------
+
+もしこれらのコントラクトのいずれかのアドレスがconstructor内で与えられていたら、encryptPrivateData関数は暗号化されていないprivateデータを表示するeventを生成するでしょう。ライブラリ風のコントラクトがconstructor内でセットされていたのにも関わらず、所有者などの権限のあるユーザーによってライブラリコントラクトのアドレスが変更されてしまうケースがよくあります。リンクしているコントラクトが呼び出せる関数を持っていない場合、fallback関数が実行されます。例えば、encryptionLibrary.​rot13Encrypt()の行でencryptionLibraryによって指定されたコントラクトが次の場合
+
+[source, Javascript]
+------
+contract Blank {
+    event Print(string text);
+    function () {
+        emit Print("Here");
+        // put malicious code here and it will run
+    }
+}
+------
+
+この時テキストHereでeventは発火します。したがって、ユーザーがコントラクトライブラリを変更すれば、原則として他のユーザーに無意識に任意のコード実行させることができます。
+
+=== 対策
+
+前述のように、安全なコントラクトは悪意のある方法によってデプロイすることができます。監査人は公にコントラクトを検証し、その所有者に悪意のある方法でデプロイさせることができます。その結果として、公に監査されたコントラクトは脆弱性を持ったり、悪意のあるものになります。
+
+これらのシナリオを防ぐ方法はたくさんあります。以下がnewというkeywordを使ってコントラクトを作成して防止する一例です。
+
+[source, Javascript]
+------
+constructor() {
+    encryptionLibrary = new Rot13Encryption();
+}
+------
+
+参照するコントラクトのインスタンスをデプロイするときに作成するこの方法なら、デプロイする人にRot13Encryption自体を変えない限り、置き換えられることはなくなります。
+
+他の解決策としては外部コントラクトのアドレスをハードコーディングする方法があります。
+
+一般的に外部コントラクトを呼び出すコードは常に注意深く監査されているべきです。開発者にとって、外部コントラクトを定義する際にコントラクトアドレスをpublicにしておくことは、ユーザーがコントラクトによって参照されているコードを簡単に調べられることを可能にするので良い考えです。しかし反対に、コントラクトがprivateなコントラクトアドレス変数を持っていた場合、何者かが悪意を持って行動している兆候の可能性があります。ユーザーが外部関数を呼び出すために使用されているコントラクトアドレスを変更できる場合、何のコードが変更されたかをユーザーが確認したり、新しいコントラクトアドレスで選択する機会を与えるためにタイムロックや投票メカニズムを実装することが重要です。
+
+=== 現実の事例として: Reentrancy Honey Pot
+
+メインネットには多くのhoney potsがリリースされ続けています。これらのコントラクトはコントラクトを悪用しようとするEthereumハッカーを出し抜こうとしているが、ハッカーらが悪用しようとするコントラクトへとetherを流出させてしまっています。
+
+以下例です。
+
+[source, Javascript]
+------
+pragma solidity ^0.4.19;
+
+contract Private_Bank
+{
+    mapping (address => uint) public balances;
+    uint public MinDeposit = 1 ether;
+    Log TransferLog;
+
+    function Private_Bank(address _log)
+    {
+        TransferLog = Log(_log);
+    }
+
+    function Deposit()
+    public
+    payable
+    {
+        if(msg.value >= MinDeposit)
+        {
+            balances[msg.sender]+=msg.value;
+            TransferLog.AddMessage(msg.sender,msg.value,"Deposit");
+        }
+    }
+
+    function CashOut(uint _am)
+    {
+        if(_am<=balances[msg.sender])
+        {
+            if(msg.sender.call.value(_am)())
+            {
+                balances[msg.sender]-=_am;
+                TransferLog.AddMessage(msg.sender,_am,"CashOut");
+            }
+        }
+    }
+
+    function() public payable{}
+
+}
+
+contract Log
+{
+    struct Message
+    {
+        address Sender;
+        string  Data;
+        uint Val;
+        uint  Time;
+    }
+
+    Message[] public History;
+    Message LastMsg;
+
+    function AddMessage(address _adr,uint _val,string _data)
+    public
+    {
+        LastMsg.Sender = _adr;
+        LastMsg.Time = now;
+        LastMsg.Val = _val;
+        LastMsg.Data = _data;
+        History.push(LastMsg);
+    }
+}
+------
+
+コントラクト内にあるreentrancyバグを悪用することによって1etherが失われました。
+
 == 短いアドレスやパラメータの攻撃
+
+この攻撃はSolidityコントラクト上で実施されるわけでなく、コントラクトと相互作用するサードパーティのアプリケーション上で発生します。この章ではコントラクトでパラメータがどのように操作されるかを確認しましょう。
+
+=== 脆弱性
+
+コントラクトにパラメータを渡す際、パラメータはABI仕様にエンコードされます。そして想定の長さよりも短いエンコードされたパラメータを送ることができます。そのような場合、EVMは想定どおりの長さにするためにエンコードされたパラメータの終端にゼロを付け加えます。このためサードパーティのアプリケーションがinputを検証しない場合問題が発生します。わかりやすい例はユーザーが出金を要求するときに、取引所がERC20トークンのアドレスを検証しない場合です。
+
+パラメータの順序に注意して、標準的なERC20のtransfer関数を考えてみましょう。
+
+[source, Javascript]
+------
+function transfer(address to, uint tokens) public returns (bool success);
+------
+
+大量のトークンを保有している取引所と100トークン出金したいユーザーがいると考えます。ユーザーがアドレス0xdeaddeaddeaddeaddeaddeaddeaddeaddeaddeadとトークンの数100を提出します。取引所はこれらのパラメータをtransfer関数によって順番通りにエンコードします。
+
+エンコード結果
+[source]
+------
+a9059cbb000000000000000000000000deaddeaddea \
+ddeaddeaddeaddeaddeaddeaddead0000000000000
+000000000000000000000000000000000056bc75e2d63100000
+------
+
+最初の4バイト（a9059cbb）はtransfer関数の署名かセレクターであり、次の32バイトはアドレスで、最後の32バイトはuint256でトークンの数を表しています。最後の16進数56bc75e2d63100000は100トークンと対応しています。1バイト欠けたアドレスを送った場合に何が起きるかを見てみましょう。特に攻撃者がアドレスとして0xdeaddeaddeaddeaddeaddeaddeaddeaddeaddeと出金するために同様にトークン100を送ると何が起きるかです。取引所がこのinputを検証しない場合、エンコードすると以下になります。
+
+[source]
+------
+a9059cbb000000000000000000000000deaddeaddea \
+ddeaddeaddeaddeaddeaddeadde00000000000000
+00000000000000000000000000000000056bc75e2d6310000000
+------
+
+違いはわずかしかありません。エンコードされた最後に00が追加されていることに注目しましょう。これがスマートコントラクトに送信されると、アドレスパラメータは0xdeaddeaddeaddeaddeaddeaddeaddeaddeadde00として読み取られ、値（トークン量）は56bc75e2d6310000000（最後２つの0が余分）として読み取られるでしょう。この値は25600トークンです。もし取引所が大量のトークンを保有していたら、ユーザーは変更したアドレスへ25600トークンを引き出せてしまいます。この例では攻撃者は変更したアドレスを渡していませんが、もし攻撃者が0で終わるアドレスを生成してそれを使用したら、検証しない取引所からトークンを盗み出せます。
+
+=== 対策
+
+外部アプリケーションで入力されるパラメータはブロックチェーンに送る前にすべて検証するべきです。またここではパラメータのの順序も重要ということに気をつけるべきです。paddingは最後にのみ発生するので、スマートコントラクトでのパラメータの順序を気をつけるとこの攻撃のいくらかは緩和することが出来ます。
 
 == 未確認な呼び出しの返り値
 
