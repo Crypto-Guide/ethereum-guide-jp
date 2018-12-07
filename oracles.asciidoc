@@ -109,17 +109,37 @@ request-response型Oracleは、アプリケーションとOracleが相互の通�
 == データ認証
 Oracleがチェーンの外の情報を取得してくると一言に言っても、チェーンの外のデータを取り込む際には、そのデータの真正性を確かめる必要があります。
 なぜならブロックチェーンは「書き込まれたデータが事実上改竄できない」という特性を持っていますが、書き込む段階でデータが偽のものであればその特性が意味をなさなくなってしまうからです。
-主なOracleシステムには以下のようなものがあります。
 
-=== Oraclize
+データの真正性を証明する方法に以下の2つがあります。
+
+=== Authenticity Proofs
+Authenticity Proofsは、暗号学的にデータが改ざんされていないことを保証する手法です。
+
+デジタル署名などの様々な検証技術を使用することで、データの真正性のトラスト先をデータ提供者からデータの検証者に移転することができます。
+オンチェーンでAuthenticity Proofsを行うことによって、スマートコントラクトは提供されたデータを扱う前に、検証をすることができます。
+この手法を使用しているOracleシステムとしてOraclizeが挙げられます。
+
+==== Oraclize
 OraclizeはAmazon Web Services（AWS）仮想マシン・インスタンスを監査人として使用し、インスタンス化後に変更されていないものとして検証するOracleシステム。(Amazon AWSを信頼する必要がある)
 
-詳細は以下のURL
+詳細は以下のURLの「5. 信頼性検証」を読んでください。 +
 https://medium.com/kyuzan-engineering-blockchain-jp/%E3%83%96%E3%83%AD%E3%83%83%E3%82%AF%E3%83%81%E3%82%A7%E3%83%BC%E3%83%B3%E4%B8%8A%E3%81%AB%E5%A4%96%E9%83%A8%E6%83%85%E5%A0%B1%E3%82%92%E5%8F%96%E3%82%8A%E8%BE%BC%E3%82%80oraclize-%E5%89%8D%E5%8D%8A-e0614553684a
 
-=== Town Crier
-Town Crierは、IntelのSoftware Guard eXtensions（SGX）を使用して、HTTPSクエリーからの応答が本物であることを確認できるOracleシステム。
-IntelのSGXを信頼する必要があります。
+
+=== Trusted Excecution Environments(TEEs)
+
+TEEsはデータの真正性をハードウェアを基盤にして証明する手法です。
+TEEsを使用したOracleシステムとしてTown Carierがあります。
+
+==== Town Crier
+Town Crierは、IntelのSoftware Guard eXtensions（SGX）を使用して、HTTPSクエリーからの応答が本物であることを確認できるOracleシステムです。
+SGXは、他のいかなるプロセスの不正な侵入から保護されたCPUの閉じられた小さな領域(enclave)でアプリケーションを動作させることによって、データの真正性を保証すると同時に、アプリケーションの状態が他のプロセスからは見えない状態にして、機密性を保持します。
+
+そのアプリケーションが上記のようなセキュアなSGXの中で動作しているということをデジタル署名で証明することによって、そのデータが改ざんされていないことや、Town Carierが発行したデータが本物であることを証明します。
+
+また、データを要求するコントラクト側がTown Crierの公開鍵を使用して、要求クエリを暗号化することによって、Town Crierに要求しているデータを秘匿化することもできます。
+
+この仕組みでは、Intel SGXのenclave内でデータを取得するプログラムを実行している限りではデータが改ざんされないという前提にったっているため、IntelのSGXを信頼する必要があります。
 
 
 [[computation_oracles]]
@@ -127,8 +147,46 @@ IntelのSGXを信頼する必要があります。
 
 これまではブロックチェーン外部のデータを取得してくるオラクルについてでしたが、計算量がとても大きい処理をオンチェーンで行うとGasが異常にかかるので、それらの計算をオフチェーンのサーバーに依頼するOracleも数多く存在しています。
 例えば、計算オラクルを使用して、集約的な回帰計算を実行して、債券契約の利回りを推定する場合などです。
+これはスマートコントラクトの処理をオフチェーンの別の場所に委託できるという側面からスケーラビリティ問題を解決する手法の1つとされています。
 
-これらのOracleシステムには、CryptletやTrueBitなどがあります。
+=== Oraclize
+中央集権的に管理されていて完全にトラステレスではないけれども、監査は可能なサービスとしてOraclizeが計算Oracleも提供しています。
+Oraclizeの計算oracleは以下のように実行されます。
+
+* 計算を要求する側のコントラクトがOraclizeのコントラクトに計算を要求する
+* OraclizeのコントラクトからOraclizeが提供している監査可能なt2.micro AWSインスタンスにデータ計算のリクエストをする
+* AWSインスタンスはIPFSにアップロードされているユーザー設定のDockerfileからコンテナを作成する
+* コンテナで受け取ったデータの計算を行いその結果をOraclizeで取得して、チェーン上に取り込み、最初のコントラクト側に送信する
+
+=== Cryptlet
+一方で、分散化された計算Oracleとしては、Microsoftが提案したCryptletという概念があります。
+Cryptletは、次の形式に従います。
+
+[source,solidity]
+----
+public class SampleContractCryptlet : Cryptlet
+  {
+        public SampleContractCryptlet(Guid id, Guid bindingId, string name,
+            string address, IContainerServices hostContainer, bool contract)
+            : base(id, bindingId, name, address, hostContainer, contract)
+        {
+            MessageApi = new CryptletMessageApi(GetType().FullName,
+                new SampleContractConstructor())
+----
+
+=== TrueBit
+さらに分散化した計算Oracleとしては、スケーラブルで検証可能なオフチェーン計算処理を提供するTrueBitがあります。
+
+TrueBitは、それぞれの検証者が計算処理を行い、他者の計算処理を検証するインセンティブを持っているシステムを使用して分散化された計算処理を行います。
+
+TrueBitのホワイトペーパーでは、これを「承認ゲーム」と表現しています。この承認ゲームの参加者は「解決者」と「承認者」です。
+
+解決者は、トラストレスな第三者でスマートコントラクトの計算を行う人です。承認者は、解決者の計算結果が正当かどうか確認します。もし1人でも承認者が、解決者の結果が不正であると判断した場合は、オンチェーンでの処理に回しネットワーク全体で正当性を確かめます。
+
+この承認ゲームにおいて、解決者と承認者は正解した方が報酬をゲットし、不正解の方は罰金を払わなくてはいけません。つまり、不正をした解決者が見つかった場合、解決者はペナルティを支払わなくてはいけなく、解決者が正当であるのに承認者が不正であると判断した場合は承認者がペナルティを受ける必要があるのです。
+
+このような承認ゲームによりTrueBitは安全性を確保しながら、スマートコントラクトを第三者に委託しイーサリアムネットワークをスケールさせていこうとしています。
+
 
 [[decentralized_oracles]]
 == 分散型Oracle
@@ -137,16 +195,46 @@ IntelのSGXを信頼する必要があります。
 分散型Oracleには以下のようなものがあります。
 
 === Oraclize
-以下の記事参照
+以下のURLの「4. Proof Shield: オンチェーン信頼性検証」を読んで下さい。 +
 https://medium.com/kyuzan-engineering-blockchain-jp/%E3%83%96%E3%83%AD%E3%83%83%E3%82%AF%E3%83%81%E3%82%A7%E3%83%BC%E3%83%B3%E4%B8%8A%E3%81%AB%E5%A4%96%E9%83%A8%E6%83%85%E5%A0%B1%E3%82%92%E5%8F%96%E3%82%8A%E8%BE%BC%E3%82%80oraclize-%E5%BE%8C%E5%8D%8A-9dec54347e7
 
 === ChainLink
+ChainLinkは 「reputation contract, order-matching contract, aggregation contract」の3つのContractを鍵とした分散型Oracleシステムです。データ自体はオフチェーンのデータプロバイダーから取得します。
+
+Reputation contractは、オフチェーンのデータプロバイダーを評価するために使われるコントラクトです。
+Reputation Contractによってつけられたスコアは、オフチェーンデータプロバイダーの信用に直結します。
+
+Order-matching Contractは、オフチェーンデータを取得したいコントラクトの注文を受けて、様々なデータプロバイダーからの入札を収集するコントラクトです。この時、Reputation Contractの信用スコアからデータプロバイダーを選定します。
+このContractが自動的に、信用スコアから選定した相当数のOracleと彼らが提供してきたデータを集めてくれるので、データを取得したいコントラクト側は自分でそれぞれのOracleに対してトランザクションを送る必要はありません。
+
+Aggregation contract は、複数のデータプロバイダーが提供してきたデータを演算し、最も確からしいデータとして出力します。
+そして、その確からしいデータとどのくらい乖離していたかによって、それぞれのデータプロバイダーを評価し、Reputation Contractに送ります。
+
+これらの一連の処理の中で、複数のデータプロバイダーから集まってきたデータの中から確からしいデータを計算するところが最も難しい点ですよね。
+ChainLinkでは、それぞれのデータプロバイダーのReputation Scoreから各自の提供してきたデータに重み付けをして計算する手法を提案しています。
+
+しかし、それぞれのOracleが提供してきたデータに対して信頼スコアで重み付けをすると、「平均値から離れているけれども正しいデータ」を棄却してしまう可能性があるため、ChainLinkでは標準的なAggregation Contractとして「Provider各自に対して重み付けをして答えを計算するコントラクト」を用意しつつ、Aggregation Contractのカスタマイズにも対応しています。
 
 === SchellingCoin
+
+SchellingCoinは、複数のデータプロバイダーから提供されたデータの中央値を真のデータとして採用する分散型Oracleシステムです。
+データプロバイダーに対して、データ提供後に、全てのデータの中央値に近しいデータを提供した人に多く再分配されるデポジットを要求することによって、データプロバイダーに他者と同じようなデータを提供するインセンティブを与える仕組みになっています。
+このインセンティブ設計によって、データプロバイダーがそれぞれの思惑で調整した値は、実際の真の値に近しくなるようになっているのです。
+
+=== TrueBit
+TrueBitのJason Teutschが最近、以下のような分散型Oracleの新しい設計を提案しています。
+
+特定のEpochの間に登録されているデータが利用可能かどうかを正しく報告できる、データ提供専用のPoWブロックチェーンを作成するというものです。
+
+そのチェーンのマイナーは現在登録されているデータを全てローカルに保持し、更新されるたびに伝搬していきます。
+
+このようなシステムは全てのマイニングノードが登録された全てのデータを格納・伝搬するので、コストがとても高いという欠点はありますが、一定期間を登録期間とし、その期間が終了したデータを随時削除していくことによってストレージを効率的に利用できると考えられます。
+
 
 [[oracle_client_interfaces_in_solidity]]
 == SolidityにおけるOracleクライアント・インターフェース
 
+=== Oraclize
 Oraclizeを使用して外部ソースからETH / USD為替レートを定期的に取得・更新するコード例
 ====
 [source,solidity]
@@ -214,6 +302,10 @@ contract EthUsdPriceTicker is usingOraclize {
 ----
 ====
 
+詳細は以下のURLの「3. Oraclizeの仕組み」「6. データ取得コスト」を読んで下さい。 +
+https://medium.com/kyuzan-engineering-blockchain-jp/%E3%83%96%E3%83%AD%E3%83%83%E3%82%AF%E3%83%81%E3%82%A7%E3%83%BC%E3%83%B3%E4%B8%8A%E3%81%AB%E5%A4%96%E9%83%A8%E6%83%85%E5%A0%B1%E3%82%92%E5%8F%96%E3%82%8A%E8%BE%BC%E3%82%80oraclize-%E5%89%8D%E5%8D%8A-e0614553684a
+
+=== BlockOne IQ
 Thomson Reutersという金融データを提供する会社が運営しているBlockOne IQというサービスもある。
 これはpermissioned Blockchain で動作するスマートコントラクトからのリクエストに対してデータを返却するというもの。
 
