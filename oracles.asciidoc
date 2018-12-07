@@ -107,23 +107,47 @@ request-response型Oracleは、アプリケーションとOracleが相互の通�
 
 [[data_authentication]]
 == データ認証
+Oracleがチェーンの外の情報を取得してくると一言に言っても、チェーンの外のデータを取り込む際には、そのデータの真正性を確かめる必要があります。
+なぜならブロックチェーンは「書き込まれたデータが事実上改竄できない」という特性を持っていますが、書き込む段階でデータが偽のものであればその特性が意味をなさなくなってしまうからです。
+主なOracleシステムには以下のようなものがあります。
 
+=== Oraclize
+OraclizeはAmazon Web Services（AWS）仮想マシン・インスタンスを監査人として使用し、インスタンス化後に変更されていないものとして検証するOracleシステム。(Amazon AWSを信頼する必要がある)
+
+詳細は以下のURL
 https://medium.com/kyuzan-engineering-blockchain-jp/%E3%83%96%E3%83%AD%E3%83%83%E3%82%AF%E3%83%81%E3%82%A7%E3%83%BC%E3%83%B3%E4%B8%8A%E3%81%AB%E5%A4%96%E9%83%A8%E6%83%85%E5%A0%B1%E3%82%92%E5%8F%96%E3%82%8A%E8%BE%BC%E3%82%80oraclize-%E5%89%8D%E5%8D%8A-e0614553684a
+
+=== Town Crier
+Town Crierは、IntelのSoftware Guard eXtensions（SGX）を使用して、HTTPSクエリーからの応答が本物であることを確認できるOracleシステム。
+IntelのSGXを信頼する必要があります。
+
 
 [[computation_oracles]]
 == 計算Oracle
 
 これまではブロックチェーン外部のデータを取得してくるオラクルについてでしたが、計算量がとても大きい処理をオンチェーンで行うとGasが異常にかかるので、それらの計算をオフチェーンのサーバーに依頼するOracleも数多く存在しています。
+例えば、計算オラクルを使用して、集約的な回帰計算を実行して、債券契約の利回りを推定する場合などです。
+
+これらのOracleシステムには、CryptletやTrueBitなどがあります。
 
 [[decentralized_oracles]]
 == 分散型Oracle
+上で見てきたような中央集権的なデータ提供や計算をするOracleは、多くのアプリケーションで使用するには十分ですが、Ethereumネットワークでは単一障害点になってしまいます。
 
+分散型Oracleには以下のようなものがあります。
+
+=== Oraclize
+以下の記事参照
 https://medium.com/kyuzan-engineering-blockchain-jp/%E3%83%96%E3%83%AD%E3%83%83%E3%82%AF%E3%83%81%E3%82%A7%E3%83%BC%E3%83%B3%E4%B8%8A%E3%81%AB%E5%A4%96%E9%83%A8%E6%83%85%E5%A0%B1%E3%82%92%E5%8F%96%E3%82%8A%E8%BE%BC%E3%82%80oraclize-%E5%BE%8C%E5%8D%8A-9dec54347e7
 
+=== ChainLink
+
+=== SchellingCoin
 
 [[oracle_client_interfaces_in_solidity]]
 == SolidityにおけるOracleクライアント・インターフェース
 
+Oraclizeを使用して外部ソースからETH / USD為替レートを定期的に取得・更新するコード例
 ====
 [source,solidity]
 ----
@@ -190,6 +214,10 @@ contract EthUsdPriceTicker is usingOraclize {
 ----
 ====
 
+Thomson Reutersという金融データを提供する会社が運営しているBlockOne IQというサービスもある。
+これはpermissioned Blockchain で動作するスマートコントラクトからのリクエストに対してデータを返却するというもの。
+
+使用例が以下のコード
 ====
 [source,solidity]
 ----
