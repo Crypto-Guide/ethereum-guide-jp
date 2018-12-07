@@ -1,0 +1,376 @@
+[[oracles_chapter]]
+= 第9章 Oracle
+
+Oracleとは「ブロックチェーンの外部の情報を信頼できるデータとしてブロックチェーンに提供する」システムのことです。
+ブロックチェーンの特徴として「一度ブロックチェーンに格納されたデータは改ざんが難しい」という特性がありますが、「ブロックチェーンに書き込むデータの段階」で不正があればその特性は意味をなさなくなります。つまり、Oracleには不正があってはならず、分散型でトラストレスなものが理想的なOracleです。
+
+[[why_oracles_are_needed]]
+== なぜOracleが必要なのか
+
+Ethereumは、EVMという仮想マシンを使ってプログラムを実行し、分散ネットワーク内でコンセンサスルールによって決定されるEthereumの状態を更新する機能を持っています。
+Oracleについて考える場合、これには2つの大きな特徴があります。
+1つは、EVMとスマートコントラクトが動作するための真のランダム性がEthereum内部からは生成できないという点です。
+2つ目は、ブロックチェーン外部のデータは、トランザクションのデータペイロードとしてのみチェーン上に持ち込めるという点です。
+
+これはつまり、ランダム数を始め、(通貨などの)価格の情報、天気予報の情報などの全ての外部データはトランザクションの一部としてEthereumネットワークに送られて来ることによってEthereumのブロックチェーンに取り込まれるということです。
+しかし、それらのデータは検証されていないので、本当に正しいデータかどうかは分かりません。
+
+このようなブロックチェーンの外部のデータを信頼できる形でチェーン上に取り込むためにOracleが必要なのです。
+
+[[oracle_use_cases]]
+== Oracleの使用例
+サッカーの試合の結果、金の価格などのブロックチェーン外の情報をトラストレスにEthereumネットワークに提供するのが、理想のOracleです。
+OracleはDapps Frontendに直接セキュアにデータを送るという用途もあります。
+Oracleは、オフチェーンの世界とスマートコントラクトを結ぶ仕組みです。
+Oracleによって、実世界の現象や情報を絡めて、スマートコントラクトが作成できるようになると、スマートコントラクトの適用範囲が大幅に拡大します。
+
+学歴の証明書や政府が管理している国民IDなどのデータは、政府のような管理主体に管理されているため、政府を信頼できる場合は問題ないといえども、トラストレスな情報とは言えません。
+
+Oracleが使われそうなものとして以下のような例が挙げられます。
+
+* 乱数：スマートコントラクトの宝くじなどで真にランダムに当選者を選出するなど
+* 自然災害の指標：地震の規模などと連動するスマートコントラクト保険など
+* 為替レート：暗号通貨の正確な対法定通貨価格
+* 資本市場データ：資産・証券の価格に連動したトークンの発行など
+* ベンチマークデータ：金利をスマートコントラクトに組み込んで金融デリバティブを作るなど
+* 静的データ：セキュリティ識別子、国コード、通貨コードなど
+* 時間のデータ：時間の経過によって動作するスマートコントラクトなど
+* 気象データ：天気予報に基づく保険料計算
+* 政治情勢：予測市場への活用
+* スポーツの試合結果：予測市場への活用
+* 位置情報データ：サプライチェーンのトラッキングなど
+* 損害の確認：保険契約の保険金支払い審査
+* 他のブロックチェーン上でのイベント：相互チェーン運用
+* Etherの市場価格：Gasの法定通貨での価格
+* フライトに関する情報：フライトのチケットを貯めている団体などに利用される
+
+[[oracle_design_pattern]]
+== Oracleのデザインパターン
+Oracleの機能は、主に以下の3つです。
+* オフチェーンのデータソースからデータを収集する
+* 署名済みトランザクションによってデータをオンチェーンに送信する
+* スマートコントラクトのStorageにデータを入れて、コントラクトから利用可能にする
+
+一度、どこかのスマートコントラクトのStorageに格納されて利用可能になったデータは、他のコントラクトからもMessage Callトランザクションを通じてOracleコントラクトのretrieve関数を呼び出すことで、利用することができます。
+また、そのデータはEthereumネットワーク上の全てのノードから直接的にアクセスすることができます。
+
+Oracleを作成する主な方法は3つあります。以下に説明していきます。
+
+=== immediate-read
+immediate-read oracleは、「ethereumbook.infoのaddressは何か」「この人物は18才以上か」といった即時にかつ多くの場合一度きりの情報として必要とされるデータを提供するOracleです。
+学術証明書、ダイアルコード、何らかの機関の会員証、空港識別子、国民IDなどが例として挙げられます。
+
+このタイプのOracleは、データをコントラクトStorageに一時的に格納します。
+それを他のスマートコントラクトがOracleコントラクトにcallを送ることで閲覧できるようになっているという仕組みです。
+
+データの読み取りだけなのでGasがかかることもありません。
+
+具体的には、アルコールを購入しようとする顧客の年齢をチェックする時などはこのOracleが使用されます。
+
+しかし、Oracleが提供するデータは、効率性やプライバシー保護の理由から、必ずしも非中央集権的に提供されている訳ではないことにも注意が必要です。
+大学が、過去の学生の学業成績証明書を提供するOracleを作成するかもしれませんが、証明書の詳細まで全てを含んだデータをOracleコントラクトのストレージに保存しておくことは現実的ではなく、証明書のハッシュのみが保存されます。
+
+また、もし仮に政府が国民IDをEthereumプラットフォーム上に置くことになったとしても、その情報は明らかにプライバシー保護される必要があるため、データをハッシュ化して格納することになるでしょう。
+
+=== publich-subscribe
+publish-subscribe Oracleは、「定期的および頻繁に変更されるようなデータ」を扱うサービスに向けて、それらのデータを効率的に提供するOracleコントラクトです。
+このOracleは、他のスマートコントラクトによってポーリング(データを定期的に問い合わせて利用可能な場合に通信する)されたり、オフチェーンにあるDeamonによって監視されたりして利用されます。
+
+このOracleはRSSフィードやWebSubなどと類似しており、Oracleが持つ情報が更新されると、自身のデータを参照しているであろうUserにデータが更新されたことを知らせるような設計になっています。
+
+Userは、Oracleコントラクトをポーリングしておくか、このような通知を受け取った時に処理をするようにプログラムを書くことができます。
+
+使用例としては、通貨の価格の動きや、気象情報、経済・社会統計データ、交通データなどが挙げられます。
+
+PollingはWebの世界では効率が悪いとされていますが、ブロックチェーンのようなP2Pネットワークにおいてはとても効率的な手法です。
+例えばEthereumでは、全てのクライアントがコントラクトのStorageの変化まで含めた全ての状態変化と同期し続けなくてはならないからです。
+
+またEthereumのEvent Logを使用すると、アプリケーションからoracleの更新を、Push通知のように検知することが簡単にできます。
+
+しかし、Oracleコントラクトによってはポーリングを行うことで多くのGas消費をしてしまうケースもあるので注意が必要です。
+
+=== request-response
+request-response Oracleは最も複雑なOracleです。
+一般的にはデータが大きすぎてスマートコントラクトのStorageに保持することができないためにオフチェーンのインフラを使用するものです。
+
+request-response型Oracleの一連の流れをまとめると以下の通りです。
+
+1. DAppからのクエリを受け取る
+2. クエリをParseする
+3. 支払いとデータへのアクセス権があるかをチェックする
+4. オフチェーンから要求されたデータを取ってくる(必要があれば暗号化する)
+5. データを添付したトランザクションに署名する
+6. ネットワークにトランザクションを伝搬する
+7. 通知などの次のトランザクションが必要な場合はそれの準備をする
+
+request-response型Oracleは、アプリケーションとOracleが相互の通信をする通常のWebシステムような形式です。
+
+[[data_authentication]]
+== データ認証
+Oracleがチェーンの外の情報を取得してくると一言に言っても、チェーンの外のデータを取り込む際には、そのデータの真正性を確かめる必要があります。
+なぜならブロックチェーンは「書き込まれたデータが事実上改竄できない」という特性を持っていますが、書き込む段階でデータが偽のものであればその特性が意味をなさなくなってしまうからです。
+
+データの真正性を証明する方法に以下の2つがあります。
+
+=== Authenticity Proofs
+Authenticity Proofsは、暗号学的にデータが改ざんされていないことを保証する手法です。
+
+デジタル署名などの様々な検証技術を使用することで、データの真正性のトラスト先をデータ提供者からデータの検証者に移転することができます。
+オンチェーンでAuthenticity Proofsを行うことによって、スマートコントラクトは提供されたデータを扱う前に、検証をすることができます。
+この手法を使用しているOracleシステムとしてOraclizeが挙げられます。
+
+==== Oraclize
+OraclizeはAmazon Web Services（AWS）仮想マシン・インスタンスを監査人として使用し、インスタンス化後に変更されていないものとして検証するOracleシステム。(Amazon AWSを信頼する必要がある)
+
+詳細は以下のURLの「5. 信頼性検証」を読んでください。 +
+https://medium.com/kyuzan-engineering-blockchain-jp/%E3%83%96%E3%83%AD%E3%83%83%E3%82%AF%E3%83%81%E3%82%A7%E3%83%BC%E3%83%B3%E4%B8%8A%E3%81%AB%E5%A4%96%E9%83%A8%E6%83%85%E5%A0%B1%E3%82%92%E5%8F%96%E3%82%8A%E8%BE%BC%E3%82%80oraclize-%E5%89%8D%E5%8D%8A-e0614553684a
+
+
+=== Trusted Excecution Environments(TEEs)
+
+TEEsはデータの真正性をハードウェアを基盤にして証明する手法です。
+TEEsを使用したOracleシステムとしてTown Carierがあります。
+
+==== Town Crier
+Town Crierは、IntelのSoftware Guard eXtensions（SGX）を使用して、HTTPSクエリーからの応答が本物であることを確認できるOracleシステムです。
+SGXは、他のいかなるプロセスの不正な侵入から保護されたCPUの閉じられた小さな領域(enclave)でアプリケーションを動作させることによって、データの真正性を保証すると同時に、アプリケーションの状態が他のプロセスからは見えない状態にして、機密性を保持します。
+
+そのアプリケーションが上記のようなセキュアなSGXの中で動作しているということをデジタル署名で証明することによって、そのデータが改ざんされていないことや、Town Carierが発行したデータが本物であることを証明します。
+
+また、データを要求するコントラクト側がTown Crierの公開鍵を使用して、要求クエリを暗号化することによって、Town Crierに要求しているデータを秘匿化することもできます。
+
+この仕組みでは、Intel SGXのenclave内でデータを取得するプログラムを実行している限りではデータが改ざんされないという前提にったっているため、IntelのSGXを信頼する必要があります。
+
+
+[[computation_oracles]]
+== 計算Oracle
+
+これまではブロックチェーン外部のデータを取得してくるオラクルについてでしたが、計算量がとても大きい処理をオンチェーンで行うとGasが異常にかかるので、それらの計算をオフチェーンのサーバーに依頼するOracleも数多く存在しています。
+例えば、計算オラクルを使用して、集約的な回帰計算を実行して、債券契約の利回りを推定する場合などです。
+これはスマートコントラクトの処理をオフチェーンの別の場所に委託できるという側面からスケーラビリティ問題を解決する手法の1つとされています。
+
+=== Oraclize
+中央集権的に管理されていて完全にトラステレスではないけれども、監査は可能なサービスとしてOraclizeが計算Oracleも提供しています。
+Oraclizeの計算oracleは以下のように実行されます。
+
+* 計算を要求する側のコントラクトがOraclizeのコントラクトに計算を要求する
+* OraclizeのコントラクトからOraclizeが提供している監査可能なt2.micro AWSインスタンスにデータ計算のリクエストをする
+* AWSインスタンスはIPFSにアップロードされているユーザー設定のDockerfileからコンテナを作成する
+* コンテナで受け取ったデータの計算を行いその結果をOraclizeで取得して、チェーン上に取り込み、最初のコントラクト側に送信する
+
+=== Cryptlet
+一方で、分散化された計算Oracleとしては、Microsoftが提案したCryptletという概念があります。
+Cryptletは、次の形式に従います。
+
+[source,solidity]
+----
+public class SampleContractCryptlet : Cryptlet
+  {
+        public SampleContractCryptlet(Guid id, Guid bindingId, string name,
+            string address, IContainerServices hostContainer, bool contract)
+            : base(id, bindingId, name, address, hostContainer, contract)
+        {
+            MessageApi = new CryptletMessageApi(GetType().FullName,
+                new SampleContractConstructor())
+----
+
+=== TrueBit
+さらに分散化した計算Oracleとしては、スケーラブルで検証可能なオフチェーン計算処理を提供するTrueBitがあります。
+
+TrueBitは、それぞれの検証者が計算処理を行い、他者の計算処理を検証するインセンティブを持っているシステムを使用して分散化された計算処理を行います。
+
+TrueBitのホワイトペーパーでは、これを「承認ゲーム」と表現しています。この承認ゲームの参加者は「解決者」と「承認者」です。
+
+解決者は、トラストレスな第三者でスマートコントラクトの計算を行う人です。承認者は、解決者の計算結果が正当かどうか確認します。もし1人でも承認者が、解決者の結果が不正であると判断した場合は、オンチェーンでの処理に回しネットワーク全体で正当性を確かめます。
+
+この承認ゲームにおいて、解決者と承認者は正解した方が報酬をゲットし、不正解の方は罰金を払わなくてはいけません。つまり、不正をした解決者が見つかった場合、解決者はペナルティを支払わなくてはいけなく、解決者が正当であるのに承認者が不正であると判断した場合は承認者がペナルティを受ける必要があるのです。
+
+このような承認ゲームによりTrueBitは安全性を確保しながら、スマートコントラクトを第三者に委託しイーサリアムネットワークをスケールさせていこうとしています。
+
+
+[[decentralized_oracles]]
+== 分散型Oracle
+上で見てきたような中央集権的なデータ提供や計算をするOracleは、多くのアプリケーションで使用するには十分ですが、Ethereumネットワークでは単一障害点になってしまいます。
+
+分散型Oracleには以下のようなものがあります。
+
+=== Oraclize
+以下のURLの「4. Proof Shield: オンチェーン信頼性検証」を読んで下さい。 +
+https://medium.com/kyuzan-engineering-blockchain-jp/%E3%83%96%E3%83%AD%E3%83%83%E3%82%AF%E3%83%81%E3%82%A7%E3%83%BC%E3%83%B3%E4%B8%8A%E3%81%AB%E5%A4%96%E9%83%A8%E6%83%85%E5%A0%B1%E3%82%92%E5%8F%96%E3%82%8A%E8%BE%BC%E3%82%80oraclize-%E5%BE%8C%E5%8D%8A-9dec54347e7
+
+=== ChainLink
+ChainLinkは 「reputation contract, order-matching contract, aggregation contract」の3つのContractを鍵とした分散型Oracleシステムです。データ自体はオフチェーンのデータプロバイダーから取得します。
+
+Reputation contractは、オフチェーンのデータプロバイダーを評価するために使われるコントラクトです。
+Reputation Contractによってつけられたスコアは、オフチェーンデータプロバイダーの信用に直結します。
+
+Order-matching Contractは、オフチェーンデータを取得したいコントラクトの注文を受けて、様々なデータプロバイダーからの入札を収集するコントラクトです。この時、Reputation Contractの信用スコアからデータプロバイダーを選定します。
+このContractが自動的に、信用スコアから選定した相当数のOracleと彼らが提供してきたデータを集めてくれるので、データを取得したいコントラクト側は自分でそれぞれのOracleに対してトランザクションを送る必要はありません。
+
+Aggregation contract は、複数のデータプロバイダーが提供してきたデータを演算し、最も確からしいデータとして出力します。
+そして、その確からしいデータとどのくらい乖離していたかによって、それぞれのデータプロバイダーを評価し、Reputation Contractに送ります。
+
+これらの一連の処理の中で、複数のデータプロバイダーから集まってきたデータの中から確からしいデータを計算するところが最も難しい点ですよね。
+ChainLinkでは、それぞれのデータプロバイダーのReputation Scoreから各自の提供してきたデータに重み付けをして計算する手法を提案しています。
+
+しかし、それぞれのOracleが提供してきたデータに対して信頼スコアで重み付けをすると、「平均値から離れているけれども正しいデータ」を棄却してしまう可能性があるため、ChainLinkでは標準的なAggregation Contractとして「Provider各自に対して重み付けをして答えを計算するコントラクト」を用意しつつ、Aggregation Contractのカスタマイズにも対応しています。
+
+=== SchellingCoin
+
+SchellingCoinは、複数のデータプロバイダーから提供されたデータの中央値を真のデータとして採用する分散型Oracleシステムです。
+データプロバイダーに対して、データ提供後に、全てのデータの中央値に近しいデータを提供した人に多く再分配されるデポジットを要求することによって、データプロバイダーに他者と同じようなデータを提供するインセンティブを与える仕組みになっています。
+このインセンティブ設計によって、データプロバイダーがそれぞれの思惑で調整した値は、実際の真の値に近しくなるようになっているのです。
+
+=== TrueBit
+TrueBitのJason Teutschが最近、以下のような分散型Oracleの新しい設計を提案しています。
+
+特定のEpochの間に登録されているデータが利用可能かどうかを正しく報告できる、データ提供専用のPoWブロックチェーンを作成するというものです。
+
+そのチェーンのマイナーは現在登録されているデータを全てローカルに保持し、更新されるたびに伝搬していきます。
+
+このようなシステムは全てのマイニングノードが登録された全てのデータを格納・伝搬するので、コストがとても高いという欠点はありますが、一定期間を登録期間とし、その期間が終了したデータを随時削除していくことによってストレージを効率的に利用できると考えられます。
+
+
+[[oracle_client_interfaces_in_solidity]]
+== SolidityにおけるOracleクライアント・インターフェース
+
+=== Oraclize
+Oraclizeを使用して外部ソースからETH / USD為替レートを定期的に取得・更新するコード例
+====
+[source,solidity]
+----
+/*
+   ETH/USD price ticker leveraging CryptoCompare API
+
+   This contract keeps in storage an updated ETH/USD price,
+   which is updated every 10 minutes.
+ */
+
+pragma solidity ^0.4.1;
+import "github.com/oraclize/ethereum-api/oraclizeAPI.sol";
+
+/*
+   "oraclize_" prepended methods indicate inheritance from "usingOraclize"
+ */
+contract EthUsdPriceTicker is usingOraclize {
+
+    uint public ethUsd;
+
+    event newOraclizeQuery(string description);
+    event newCallbackResult(string result);
+
+    function EthUsdPriceTicker() payable {
+        // signals TLSN proof generation and storage on IPFS
+        oraclize_setProof(proofType_TLSNotary | proofStorage_IPFS);
+
+        // requests query
+        queryTicker();
+    }
+
+    function __callback(bytes32 _queryId, string _result, bytes _proof) public {
+        if (msg.sender != oraclize_cbAddress()) throw;
+        newCallbackResult(_result);
+
+        /*
+         * Parse the result string into an unsigned integer for on-chain use.
+         * Uses inherited "parseInt" helper from "usingOraclize", allowing for
+         * a string result such as "123.45" to be converted to uint 12345.
+         */
+        ethUsd = parseInt(_result, 2);
+
+        // called from callback since we're polling the price
+        queryTicker();
+    }
+
+    function queryTicker() public payable {
+        if (oraclize_getPrice("URL") > this.balance) {
+            newOraclizeQuery("Oraclize query was NOT sent, please add some ETH
+                to cover for the query fee");
+        } else {
+            newOraclizeQuery("Oraclize query was sent, standing by for the
+                answer...");
+
+            // query params are (delay in seconds, datasource type,
+            // datasource argument)
+            // specifies JSONPath, to fetch specific portion of JSON API result
+            oraclize_query(60 * 10, "URL",
+                "json(https://min-api.cryptocompare.com/data/price?\
+                fsym=ETH&tsyms=USD,EUR,GBP).USD");
+        }
+    }
+}
+----
+====
+
+詳細は以下のURLの「3. Oraclizeの仕組み」「6. データ取得コスト」を読んで下さい。 +
+https://medium.com/kyuzan-engineering-blockchain-jp/%E3%83%96%E3%83%AD%E3%83%83%E3%82%AF%E3%83%81%E3%82%A7%E3%83%BC%E3%83%B3%E4%B8%8A%E3%81%AB%E5%A4%96%E9%83%A8%E6%83%85%E5%A0%B1%E3%82%92%E5%8F%96%E3%82%8A%E8%BE%BC%E3%82%80oraclize-%E5%89%8D%E5%8D%8A-e0614553684a
+
+=== BlockOne IQ
+Thomson Reutersという金融データを提供する会社が運営しているBlockOne IQというサービスもある。
+これはpermissioned Blockchain で動作するスマートコントラクトからのリクエストに対してデータを返却するというもの。
+
+使用例が以下のコード
+====
+[source,solidity]
+----
+pragma solidity ^0.4.11;
+
+contract Oracle {
+    uint256 public divisor;
+    function initRequest(
+       uint256 queryType, function(uint256) external onSuccess,
+       function(uint256
+    ) external onFailure) public returns (uint256 id);
+    function addArgumentToRequestUint(uint256 id, bytes32 name, uint256 arg) public;
+    function addArgumentToRequestString(uint256 id, bytes32 name, bytes32 arg)
+        public;
+    function executeRequest(uint256 id) public;
+    function getResponseUint(uint256 id, bytes32 name) public constant
+        returns(uint256);
+    function getResponseString(uint256 id, bytes32 name) public constant
+        returns(bytes32);
+    function getResponseError(uint256 id) public constant returns(bytes32);
+    function deleteResponse(uint256 id) public constant;
+}
+
+contract OracleB1IQClient {
+
+    Oracle private oracle;
+    event LogError(bytes32 description);
+
+    function OracleB1IQClient(address addr) public payable {
+        oracle = Oracle(addr);
+        getIntraday("IBM", now);
+    }
+
+    function getIntraday(bytes32 ric, uint256 timestamp) public {
+        uint256 id = oracle.initRequest(0, this.handleSuccess, this.handleFailure);
+        oracle.addArgumentToRequestString(id, "symbol", ric);
+        oracle.addArgumentToRequestUint(id, "timestamp", timestamp);
+        oracle.executeRequest(id);
+    }
+
+    function handleSuccess(uint256 id) public {
+        assert(msg.sender == address(oracle));
+        bytes32 ric = oracle.getResponseString(id, "symbol");
+        uint256 open = oracle.getResponseUint(id, "open");
+        uint256 high = oracle.getResponseUint(id, "high");
+        uint256 low = oracle.getResponseUint(id, "low");
+        uint256 close = oracle.getResponseUint(id, "close");
+        uint256 bid = oracle.getResponseUint(id, "bid");
+        uint256 ask = oracle.getResponseUint(id, "ask");
+        uint256 timestamp = oracle.getResponseUint(id, "timestamp");
+        oracle.deleteResponse(id);
+        // Do something with the price data
+    }
+
+    function handleFailure(uint256 id) public {
+        assert(msg.sender == address(oracle));
+        bytes32 error = oracle.getResponseError(id);
+        oracle.deleteResponse(id);
+        emit LogError(error);
+    }
+
+}
+----
+====
